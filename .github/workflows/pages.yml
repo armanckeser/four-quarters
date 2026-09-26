@@ -1,0 +1,81 @@
+# Publishes the machine to GitHub Pages.
+#
+# The app is static and the deck never reaches this host: a `.quarters` file is
+# read off the viewer's own disk, in their browser. Pages serves the toy; it
+# never sees a picture.
+
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it; a half-published site is
+# worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The CC0 reflection map is gitignored (6 MB); without it the chrome renders flat.
+      - run: bash scripts/get-hdri.sh
+
+      # Where the site sits decides how every asset URL is written, and the two
+      # cases differ: a plain project site lives at /<repo>/, but a CUSTOM DOMAIN
+      # serves the same repo from the domain root. Getting this wrong does not
+      # fail the build — it ships a page whose script, sounds, fonts and HDRI all
+      # 404, so the machine comes up blank. public/CNAME is the thing that
+      # decides it, so read the base off that rather than hardcoding either one.
+      - name: Work out the base path
+        run: |
+          if [ -f public/CNAME ]; then
+            echo "Custom domain $(cat public/CNAME) — serving from the root."
+            echo "QUARTERS_BASE=/" >> "$GITHUB_ENV"
+          else
+            echo "Project site — serving from /${{ github.event.repository.name }}/."
+            echo "QUARTERS_BASE=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
+          fi
+      - run: npm run build
+      - run: npm run check:deck
+
+      # The artifact is what gets served, so assert against it rather than
+      # trusting the step above: index.html must reference its bundle the way
+      # this deployment will actually be reached.
+      - name: Check the built asset paths match the base
+        run: |
+          want="${QUARTERS_BASE}assets/"
+          if ! grep -q "src=\"${want}" dist/index.html; then
+            echo "index.html does not reference ${want} — the base is wrong:"
+            grep -o 'src="[^"]*"' dist/index.html
+            exit 1
+          fi
+          echo "index.html references ${want} as expected."
+          if [ -f dist/CNAME ]; then echo "CNAME shipped: $(cat dist/CNAME)"; fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

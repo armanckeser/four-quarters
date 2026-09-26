@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Vite emitted JS from TS config files
+vite.config.js
+vite.config.d.ts
+
+# OS
+.DS_Store
+**/.DS_Store
+
+# Large third-party CC0 HDRI (download via scripts/get-hdri.sh)
+public/hdri/*.hdr
+
+# Editor / agent scratch
+.agents/
+
+# Agent worktrees
+.claude/worktrees/
+
+# scratch dir for SFX cleanup from source recordings
+sfx-work/
+
+# A personal catalogue override, if you keep your own titles and messages out of git.
+src/data/prints.local.ts
