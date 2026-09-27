@@ -31,6 +31,11 @@ export const quality = {
   /** Key-light shadow map edge. With the fitted shadow frustum (see MachineScene)
    *  1024 is already finer than the old 2048 map spread over 10 m. */
   shadowMapSize: qualityTier === 'phone' ? 1024 : 2048,
+  /** Multisampled default framebuffer. A phone draws at ~2x dpr, where the extra
+   *  pixels already do the anti-aliasing, and 4x MSAA would multiply the size of the
+   *  largest buffer on the page — on a GPU that shares memory with the tab and whose
+   *  driver resets (losing every WebGL context) when pushed. Desktop keeps it. */
+  antialias: qualityTier !== 'phone',
 } as const;
 
 /** The device's own pixel ratio, clamped to the tier's range: where the canvas starts
