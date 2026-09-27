@@ -37,8 +37,18 @@ export function useContextGeneration(): number {
   return generation;
 }
 
-/** Mounted once inside the Canvas: redraws the scene after a restored context. */
-export function ContextRecovery(): null {
+/** Mounted once inside the Canvas: redraws the scene after a restored context, and
+ *  reports the loss itself so App can come back in a safer configuration. */
+export function ContextRecovery({ onLost }: { onLost?: () => void }): null {
+  const gl = useThree((state) => state.gl);
   useContextGeneration();
+
+  useEffect(() => {
+    if (!onLost) return;
+    const canvas = gl.domElement;
+    canvas.addEventListener('webglcontextlost', onLost);
+    return () => canvas.removeEventListener('webglcontextlost', onLost);
+  }, [gl, onLost]);
+
   return null;
 }

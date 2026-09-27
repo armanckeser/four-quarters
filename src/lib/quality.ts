@@ -22,6 +22,34 @@ function detectTier(): QualityTier {
 
 export const qualityTier: QualityTier = detectTier();
 
+/**
+ * The Pixel 10 (Tensor G5) moved from Arm Mali to an Imagination PowerVR
+ * D-Series GPU, and its driver resets — taking EVERY WebGL context on the page
+ * with it — once enough draws a frame sample a shadow map. It is not a load
+ * problem (the same scene is smooth on an iPhone and on Adreno phones) and it
+ * surfaces as three's "Shader Error 1282 - VALIDATE_STATUS false" with an EMPTY
+ * info log, then a blank canvas. Other three.js projects bisected the same crash
+ * to the shadow fetch and fixed it the same way: no shadow map on PowerVR.
+ *   https://github.com/mrdoob/three.js/issues/34311
+ *   https://github.com/mephistopheles4/stacks/issues/381
+ * Probed once on a throwaway context, released immediately.
+ */
+function gpuCrashesOnShadowMaps(): boolean {
+  if (typeof document === 'undefined') return false;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (!gl) return false;
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = String(
+      gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? '',
+    );
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return /powervr|imagination/i.test(renderer);
+  } catch {
+    return false;
+  }
+}
+
 export const quality = {
   /** Upper bound on the canvas pixel ratio. A 3× phone at 3× renders 9× the pixels of
    *  1× for text that already reads crisp at ~2×. */
@@ -31,11 +59,8 @@ export const quality = {
   /** Key-light shadow map edge. With the fitted shadow frustum (see MachineScene)
    *  1024 is already finer than the old 2048 map spread over 10 m. */
   shadowMapSize: qualityTier === 'phone' ? 1024 : 2048,
-  /** Multisampled default framebuffer. A phone draws at ~2x dpr, where the extra
-   *  pixels already do the anti-aliasing, and 4x MSAA would multiply the size of the
-   *  largest buffer on the page — on a GPU that shares memory with the tab and whose
-   *  driver resets (losing every WebGL context) when pushed. Desktop keeps it. */
-  antialias: qualityTier !== 'phone',
+  /** Real-time shadow map. Off on a PowerVR GPU (see gpuCrashesOnShadowMaps). */
+  shadows: !gpuCrashesOnShadowMaps(),
 } as const;
 
 /** The device's own pixel ratio, clamped to the tier's range: where the canvas starts
