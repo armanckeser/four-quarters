@@ -32,7 +32,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # The CC0 reflection map is gitignored (6 MB); without it the chrome renders flat.
+      # The CC0 reflection map is gitignored (1.6 MB); without it the chrome renders flat.
       - run: bash scripts/get-hdri.sh
 
       # Where the site sits decides how every asset URL is written, and the two

@@ -7,11 +7,10 @@ export default defineConfig({
   // workflow sets this; everything that reaches into public/ goes through
   // lib/assets.ts so it follows.
   base: process.env.QUARTERS_BASE ?? '/',
-  // Force a single copy of three + three-mesh-bvh so three-bvh-csg's instanceof
-  // checks (and BVH's prototype patch) work against the same classes drei uses.
-  // Without this, Vite can bundle duplicate copies ("Multiple instances of
-  // Three.js"), which breaks CSG evaluation.
+  // Force a single copy of three (and React) so every package's `instanceof` checks
+  // run against the same classes drei uses; duplicate copies ("Multiple instances of
+  // Three.js") break them silently.
   resolve: {
-    dedupe: ['three', 'three-mesh-bvh', 'react', 'react-dom'],
+    dedupe: ['three', 'react', 'react-dom'],
   },
 });

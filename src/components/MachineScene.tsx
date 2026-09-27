@@ -1,6 +1,5 @@
 import { ThreeEvent, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, ContactShadows, Text } from '@react-three/drei';
-import { EffectComposer, N8AO, SMAA, Vignette } from '@react-three/postprocessing';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Vector3 } from 'three';
 import { CelebrationPrint, SlotId, slotOrder } from '../data/celebration';
@@ -8,6 +7,7 @@ import { usePrints } from '../deck/DeckProvider';
 import { COINS_REQUIRED } from '../App';
 import type { MachineState, OpenCard } from '../App';
 import { usePrintTextures } from '../lib/textures';
+import { quality } from '../lib/quality';
 import { CabinetBody } from './machine/CabinetBody';
 import { Handle } from './machine/Handle';
 import { FoldedCardPart } from './machine/FoldedCardPart';
@@ -60,10 +60,54 @@ function printById(prints: CelebrationPrint[], printId: string | null): Celebrat
   return prints.find((item) => item.id === printId) ?? null;
 }
 
+/**
+ * The colour to give something drawn BEHIND the display glass so it lands on screen
+ * exactly as it did when the scene went through a post-processing buffer.
+ *
+ * The glass is a faint (opacity 0.16) lit sheet. Composited in a linear-light float
+ * buffer — how the old EffectComposer pipeline blended it — its haze lifts dark text
+ * a lot (#1c2228 read as a soft #585c5a). Blended straight into the sRGB canvas it
+ * lifts dark colours far less, so the same text came out near-black and the face
+ * looked harsher. Rather than pay ~45 MB of full-screen float buffers on a phone to
+ * get linear blending back, solve for the colour that gives the linear result under
+ * sRGB blending:   c' = (encode(0.84·decode(c) + 0.16·G) − 0.16·encode(G)) / 0.84
+ * where G is the glass's lit colour, measured from renders of the old pipeline
+ * (sRGB ≈ 197, 203, 196 at the default view). Exact for flat colours; the glass
+ * lighting barely changes across the orbit.
+ */
+const GLASS_OPACITY = 0.16;
+const GLASS_LIT_SRGB = [197, 203, 196].map((channel) => channel / 255);
+const decodeSrgb = (v: number) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+const encodeSrgb = (v: number) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+const glassCache = new Map<string, string>();
+function behindGlass(hex: string): string {
+  const cached = glassCache.get(hex);
+  if (cached) return cached;
+  const a = GLASS_OPACITY;
+  const out = [1, 3, 5].map((offset, channel) => {
+    const c = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    const glass = GLASS_LIT_SRGB[channel];
+    const target = encodeSrgb((1 - a) * decodeSrgb(c) + a * decodeSrgb(glass));
+    const compensated = Math.min(1, Math.max(0, (target - a * glass) / (1 - a)));
+    return Math.round(compensated * 255).toString(16).padStart(2, '0');
+  });
+  const result = `#${out.join('')}`;
+  glassCache.set(hex, result);
+  return result;
+}
+
 const setCursor = (value: 'pointer' | 'auto') => {
   document.body.style.cursor = value;
 };
 
+/**
+ * Every click target in the scene that has no look of its own (hit pads, the wheel
+ * band, the open-card catcher) carries `<meshBasicMaterial visible={false} />`. The
+ * renderer skips an invisible material entirely — no draw, no shadow-pass draw — but
+ * R3F's raycaster does not look at visibility, so the pad still takes the pointer.
+ * They used to be transparent opacity-0 materials: identical on screen, but each one a
+ * real blended draw call every frame.
+ */
 const hoverable = {
   onPointerOver: (event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -136,7 +180,7 @@ function FaceThumb({
         textAlign="center"
         anchorX="center"
         anchorY="middle"
-        color={owned ? faceLayout.textColor : '#8a8a86'}
+        color={behindGlass(owned ? faceLayout.textColor : '#8a8a86')}
       >
         {owned ? item.title : '? ? ?'}
       </Text>
@@ -178,14 +222,14 @@ function PageArrow({
         {...(enabled ? hoverable : {})}
       >
         <planeGeometry args={[0.026, 0.05]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial visible={false} />
       </mesh>
       <Text
         fontSize={0.026}
         font={DISPLAY_FONT}
         anchorX="center"
         anchorY="middle"
-        color={enabled ? faceLayout.textColor : '#bcb8ad'}
+        color={behindGlass(enabled ? faceLayout.textColor : '#bcb8ad')}
       >
         {direction === 'prev' ? '‹' : '›'}
       </Text>
@@ -202,7 +246,10 @@ function PageDots({ pages, current, y }: { pages: number; current: number; y: nu
       {Array.from({ length: pages }, (_, page) => (
         <mesh key={page} position={[startX + page * gap, 0, 0]}>
           <circleGeometry args={[page === current ? 0.0024 : 0.0016, 16]} />
-          <meshBasicMaterial color={page === current ? faceLayout.textColor : '#bcb8ad'} toneMapped={false} />
+          <meshBasicMaterial
+            color={behindGlass(page === current ? faceLayout.textColor : '#bcb8ad')}
+            toneMapped={false}
+          />
         </mesh>
       ))}
     </group>
@@ -267,7 +314,7 @@ function MachineFace({
         letterSpacing={0.02}
         anchorX="center"
         anchorY="middle"
-        color={faceLayout.textColor}
+        color={behindGlass(faceLayout.textColor)}
       >
         MINI PRINT
       </Text>
@@ -278,7 +325,7 @@ function MachineFace({
         letterSpacing={0.02}
         anchorX="center"
         anchorY="middle"
-        color={faceLayout.textColor}
+        color={behindGlass(faceLayout.textColor)}
       >
         VENDING MACHINE
       </Text>
@@ -306,7 +353,7 @@ function MachineFace({
           }}
         >
           <planeGeometry args={[bandW, bandH]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <meshBasicMaterial visible={false} />
         </mesh>
       ) : null}
 
@@ -348,7 +395,7 @@ function MachineFace({
         textAlign="center"
         anchorX="center"
         anchorY="middle"
-        color={faceLayout.textColor}
+        color={behindGlass(faceLayout.textColor)}
       >
         4 QUARTERS = 1 SURPRISE PRINT
       </Text>
@@ -476,8 +523,19 @@ export function MachineScene({
         intensity={0.85}
         color="#ffd9a0"
         position={[0.9, 1.3, 0.8]}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        // The default shadow camera spans 10 m × 10 m, most of it empty, so a 2048 map
+        // spent ~5 mm a texel. These bounds are the light-space box around everything
+        // that casts (machine, shelves, books — computed from bookstore.shelving and
+        // the pedestal) with a margin, so 1024 on a phone is already finer than the
+        // old map (a quarter of the memory and fill) and 2048 on desktop is twice as
+        // fine. `near` stays three's default 0.5 so the same casters are clipped.
+        shadow-mapSize-width={quality.shadowMapSize}
+        shadow-mapSize-height={quality.shadowMapSize}
+        shadow-camera-left={-1.2}
+        shadow-camera-right={2.3}
+        shadow-camera-bottom={-1.6}
+        shadow-camera-top={2.9}
+        shadow-camera-far={4.5}
       />
       <directionalLight intensity={0.22} color="#cfd8e6" position={[-0.8, 0.7, 0.5]} />
       {/* HDRI used for REFLECTIONS ONLY (background={false}) so the red enamel + chrome
@@ -546,7 +604,12 @@ export function MachineScene({
           above its surface, below the dome rim, to avoid z-fighting). Adds the close
           ambient-occlusion contact the cast shadow alone can't, so the base reads as
           RESTING on the floor. */}
+      {/* frames={1}: bake it once. Nothing that moves ever comes within `far` of the
+          floor (the handles and cards live up at the cabinet), so re-rendering the
+          whole scene from below plus two blur passes EVERY frame — the default — bought
+          nothing and cost a second full scene draw per frame. */}
       <ContactShadows
+        frames={1}
         position={[0, floor.y - 0.0015, 0]}
         opacity={0.5}
         scale={0.9}
@@ -571,14 +634,12 @@ export function MachineScene({
         maxAzimuthAngle={Math.PI / 2}
       />
 
-      {/* Post: clean SMAA edges + a whisper of ambient occlusion + a faint
-          vignette. AO is kept VERY light so it darkens only deep crevices and
-          never crushes the gray face/labels to black. SMAA handles AA. */}
-      <EffectComposer multisampling={0} enableNormalPass>
-        <N8AO aoRadius={0.03} intensity={0.5} distanceFalloff={1} halfRes />
-        <SMAA />
-        <Vignette eskil={false} offset={0.35} darkness={0.35} />
-      </EffectComposer>
+      {/* No post-processing chain. It was N8AO + a normal pass + SMAA + a vignette,
+          which re-drew the scene for normals and held ~90 MB of full-screen float
+          buffers on a phone. AA is native MSAA now (App's gl.antialias) and the
+          vignette is a CSS overlay (styles.css .scene-vignette); the AO was set to a
+          whisper that only touched deep crevices, which the contact shadow + key-light
+          shadow already carry. */}
     </>
   );
 }
@@ -602,7 +663,10 @@ function CardInteractionLayer({
   flipped: boolean;
 }) {
   const ref = useRef<Group>(null);
-  const { camera } = useThree();
+  const camera = useThree((state) => state.camera);
+  // Scrolling only moves a number the open card eases toward; on an on-demand canvas
+  // it has to ask for the frame that starts the ease.
+  const invalidate = useThree((state) => state.invalidate);
   const forward = useMemo(() => new Vector3(), []);
   const pos = useMemo(() => new Vector3(), []);
   // Drag tracking: the pointer's local Y at press + whether it moved enough to count as
@@ -632,7 +696,7 @@ function CardInteractionLayer({
       {/* Outside-card backdrop: closes on click. */}
       <mesh position={[0, 0, -0.04]} onClick={(event) => { event.stopPropagation(); onClose(); }}>
         <planeGeometry args={[3, 3]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial visible={false} />
       </mesh>
       {/* Card-area: click flips; wheel / vertical drag scrolls the back message. */}
       <mesh
@@ -643,6 +707,7 @@ function CardInteractionLayer({
           // Drag DOWN content == wheel down reveals lower text: target increases.
           scrollState.target += event.deltaY * card.message.wheelSpeed;
           clampTarget();
+          invalidate();
         }}
         onPointerDown={(event) => {
           dragY.current = event.point.y;
@@ -656,6 +721,7 @@ function CardInteractionLayer({
           // Drag UP (dy<0) reveals lower text (target increases): subtract dy.
           scrollState.target -= dy * card.message.dragSpeed;
           clampTarget();
+          invalidate();
           dragY.current = event.point.y; // incremental
         }}
         onPointerUp={() => {
@@ -673,7 +739,7 @@ function CardInteractionLayer({
         {...hoverable}
       >
         <planeGeometry args={[print.width * 1.3, print.height * 2.1]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial visible={false} />
       </mesh>
     </group>
   );

@@ -25,6 +25,9 @@ about the codebase content, that is a false positive.
 - `npm run check:flow` — drives the whole deck flow (pick photos → export → open the
   file on a clean machine) in headless Chrome. Needs `npm run preview -- --port 4178`
   running first; skips with a note if Chrome is not found.
+- `npm run check:perf` — loads the built app in Chrome under phone emulation and prints
+  what the scene costs a phone (see "Performance" below). Same preview server as
+  `check:flow`, on :4178; `npm run check:perf -- --desktop` for the desktop profile.
 - There is no lint command. Type-checking via `tsc -b` (run by `build`) is the
   correctness check for the scene.
 
@@ -77,8 +80,8 @@ dimensional; everything else CONSUMES it. Key exports: `cabinet`, `frame`, `glas
   The card lives in this **drawer-local frame** (origin at the handle centre); the slit is
   at drawer-local `z ≈ -handle.mountZ` (the face is BEHIND the handle origin).
 - **Mirroring gotcha:** `Handle`'s inner deck mesh renders with `rotation={[0,-π/2,0]}`,
-  mapping geometry-local +Z → world −X. CSG coin holes are cut in the LOCAL frame; coins
-  are placed in WORLD frame. They must be reconciled or they end up mirrored.
+  mapping geometry-local +Z → world −X. The tongue's coin cutouts are built in the LOCAL
+  frame; coins are placed in WORLD frame. They must be reconciled or they end up mirrored.
 
 ### State lives in `App.tsx`, not the scene
 
@@ -139,7 +142,7 @@ there is no `printImages.ts` any more.
 ### Component ownership
 
 - `machine/CabinetBody.tsx` — red shell, white face, glass, card slits, pole + dome base.
-- `machine/Handle.tsx` — chrome coin handle, CSG-cut coin slots, $1.00 plate.
+- `machine/Handle.tsx` — chrome coin handle, cut-through coin slots, $1.00 plate.
 - `machine/FoldedCardPart.tsx` — kraft folding jacket + print insert; ALL slide/fold/flip
   animation. Driven by an ordered PHASE timeline (`stowed → dispensed → open_slideout →
   open_fly → open_unfold → open_rest → closing`): it eases toward ONE phase target at a
@@ -157,12 +160,41 @@ there is no `printImages.ts` any more.
 
 ### Build pitfalls
 
-- `vite.config.ts` dedupes `three`, `three-mesh-bvh`, `react`, `react-dom`, and
-  `package.json` pins `three-mesh-bvh@0.9.10`. This is load-bearing: `three-bvh-csg`'s
-  `instanceof` checks (used for the CSG coin-slot cuts) break if Vite bundles duplicate
-  copies of three ("Multiple instances of Three.js").
+- `vite.config.ts` dedupes `three`, `react`, `react-dom`: duplicate copies of three
+  ("Multiple instances of Three.js") silently break `instanceof` checks across packages.
 - StrictMode is on (`main.tsx`), so effects and state updaters double-invoke in dev. Play
   SFX OUTSIDE state updaters (see `flipOpenCard`/`closeOpenCard`) or they double-fire.
+
+## Performance (it has to run on a phone)
+
+`npm run check:perf` (needs `npm run preview -- --port 4178`) loads the built app in Chrome
+under phone emulation and prints draw calls/frame, frames drawn while idle, GPU memory,
+shader programs and bytes downloaded, plus a screenshot. Run it before and after anything
+that touches the scene; `-- --desktop` for the desktop profile. At the time of writing:
+~95 draw calls, 0 idle frames, ~31 MB GPU textures on a phone (it was 517 / constant /
+188 MB, which is why phones could not run it).
+
+Rules that keep it there:
+
+- **The canvas renders on demand** (`frameloop="demand"`). Anything animated in a
+  `useFrame` must step with `frameDelta(delta)` and call `invalidate()` until it settles
+  (see `lib/frameloop.ts`); a prop change that only retargets an animation needs a
+  `useEffect(() => invalidate(), [prop])`. Symptom of forgetting: the motion only
+  happens when you also move the camera.
+- **No post-processing.** It cost ~90 MB of float buffers. The palette the scene was tuned
+  under is reproduced without it: `flat` (the old EffectComposer silently turned tone
+  mapping off), a CSS vignette (`.scene-vignette`), and `behindGlass()` for colours drawn
+  behind the display glass (the old pipeline blended the glass in linear light).
+- **Static meshes are merged** (`lib/mergeStatic.ts`), colour baked per vertex when
+  parts differ. Handle, card and cabinet geometry/textures are built once per page and
+  shared (`handleAssets`, `cardAssets`) — never per instance, never in a component
+  defined inside another component's render.
+- **Invisible click targets** use `<meshBasicMaterial visible={false} />` (skipped by the
+  renderer, still raycast), never a transparent opacity-0 material.
+- A material first compiled without a `map` will not pick one up later: key it on the
+  texture's arrival (`key={texture ? 'mapped' : 'flat'}`).
+- `lib/quality.ts` holds the only per-device differences (shadow map size, dpr range);
+  `AdaptiveResolution` steps the dpr down when animation frames run slow.
 
 ## Reference & history
 

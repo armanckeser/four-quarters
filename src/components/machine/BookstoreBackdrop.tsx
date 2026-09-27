@@ -1,7 +1,7 @@
-import { Instance, Instances } from '@react-three/drei';
-import { useMemo } from 'react';
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three';
+import { useEffect, useMemo } from 'react';
+import { BoxGeometry, CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three';
 import { bookWallLayout, bookstore, floor } from '../../lib/dimensions';
+import { mergeStaticParts, type StaticPart } from '../../lib/mergeStatic';
 
 /**
  * The cozy indie-bookstore set the machine stands in: a warm honey-wood plank FLOOR
@@ -96,11 +96,75 @@ function useWoodPlankTexture(): CanvasTexture | null {
  *  flat disc. */
 const FLOOR_Z_FIGHT_DROP = 0.002;
 
+/**
+ * The whole wall of books as TWO static meshes: every plank + bracket in one (they
+ * share the wood material, differing only in colour), every book in the other. Built
+ * once from the deterministic layout. This was 56 separate plank/bracket meshes plus a
+ * drei <Instances> of ~400 books — which re-uploads every instance matrix every frame
+ * — so the wall alone was ~60 draw calls (twice, with the shadow pass) and a per-frame
+ * CPU loop, for geometry that never moves.
+ */
+function useBookWallGeometry() {
+  const geometries = useMemo(() => {
+    const { wall, shelving } = bookstore;
+    const layout = bookWallLayout();
+
+    const shelves: StaticPart[] = [];
+    for (const plank of layout.planks) {
+      // Full-width shelf plank, just in front of the wall.
+      shelves.push({
+        geometry: new BoxGeometry(shelving.spanWidth, shelving.plankThickness, shelving.plankDepth),
+        position: [0, plank.centerY, shelving.plankZ],
+        color: shelving.woodColor,
+      });
+      // Small mounting brackets bridging the plank back to the wall, a few evenly
+      // spaced across the span, so the shelf reads as mounted (not floating).
+      for (let bracketIndex = 0; bracketIndex < shelving.bracket.perPlank; bracketIndex += 1) {
+        // Evenly space brackets across the span (perPlank is fixed ≥2 in the SoT).
+        const t = bracketIndex / (shelving.bracket.perPlank - 1);
+        shelves.push({
+          geometry: new BoxGeometry(
+            shelving.bracket.width,
+            shelving.bracket.height,
+            Math.abs(shelving.plankZ - wall.z),
+          ),
+          position: [
+            (t - 0.5) * (shelving.spanWidth - shelving.bracket.width),
+            // Sit the bracket BEHIND the plank (between plank and wall), just under it.
+            plank.centerY - shelving.plankThickness / 2 - shelving.bracket.height / 2,
+            (shelving.plankZ + wall.z) / 2,
+          ],
+          color: shelving.bracket.color,
+        });
+      }
+    }
+
+    // Unit boxes scaled per book; rotation handles leaning spines + laid-flat stacks.
+    const books: StaticPart[] = layout.books.map((book) => ({
+      geometry: new BoxGeometry(),
+      position: book.position,
+      scale: book.scale,
+      rotation: [0, 0, book.rotationZ],
+      color: book.color,
+    }));
+
+    return { shelves: mergeStaticParts(shelves), books: mergeStaticParts(books) };
+  }, []);
+
+  useEffect(
+    () => () => {
+      geometries.shelves.dispose();
+      geometries.books.dispose();
+    },
+    [geometries],
+  );
+  return geometries;
+}
+
 export function BookstoreBackdrop() {
   const woodTexture = useWoodPlankTexture();
   const { wall, shelving } = bookstore;
-  // The whole wall of books (planks + procedural books) — deterministic, built once.
-  const layout = useMemo(() => bookWallLayout(), []);
+  const bookWall = useBookWallGeometry();
 
   return (
     <group>
@@ -133,72 +197,14 @@ export function BookstoreBackdrop() {
         />
       </mesh>
 
-      {/* WALL OF BOOKS: full-width mounted shelf planks + their brackets + the
-          procedurally-arranged books standing on them. */}
-      {layout.planks.map((plank, index) => (
-        <group key={`plank-${index}`}>
-          {/* Full-width shelf plank, just in front of the wall. */}
-          <mesh position={[0, plank.centerY, shelving.plankZ]} castShadow receiveShadow>
-            <boxGeometry
-              args={[shelving.spanWidth, shelving.plankThickness, shelving.plankDepth]}
-            />
-            <meshStandardMaterial
-              color={shelving.woodColor}
-              roughness={shelving.woodRoughness}
-            />
-          </mesh>
-
-          {/* Small mounting brackets bridging the plank back to the wall, a few evenly
-              spaced across the span, so the shelf reads as mounted (not floating). */}
-          {Array.from({ length: shelving.bracket.perPlank }, (_, bracketIndex) => {
-            // Evenly space brackets across the span (perPlank is fixed ≥2 in the SoT).
-            const t = bracketIndex / (shelving.bracket.perPlank - 1);
-            const bracketX = (t - 0.5) * (shelving.spanWidth - shelving.bracket.width);
-            // Sit the bracket BEHIND the plank (between plank and wall), just under it.
-            const bracketZ = (shelving.plankZ + wall.z) / 2;
-            return (
-              <mesh
-                key={`bracket-${index}-${bracketIndex}`}
-                position={[
-                  bracketX,
-                  plank.centerY - shelving.plankThickness / 2 - shelving.bracket.height / 2,
-                  bracketZ,
-                ]}
-                castShadow
-              >
-                <boxGeometry
-                  args={[
-                    shelving.bracket.width,
-                    shelving.bracket.height,
-                    Math.abs(shelving.plankZ - wall.z),
-                  ]}
-                />
-                <meshStandardMaterial
-                  color={shelving.bracket.color}
-                  roughness={shelving.woodRoughness}
-                />
-              </mesh>
-            );
-          })}
-        </group>
-      ))}
-
-      {/* All books across every shelf in ONE instanced draw call (drei writes each
-          Instance's `color` into the instanceColor buffer automatically). Per-instance
-          rotation handles leaning spines + laid-flat stacks. */}
-      <Instances limit={layout.books.length} castShadow receiveShadow>
-        <boxGeometry />
-        <meshStandardMaterial roughness={shelving.book.roughness} />
-        {layout.books.map((book, index) => (
-          <Instance
-            key={index}
-            position={book.position}
-            scale={book.scale}
-            rotation={[0, 0, book.rotationZ]}
-            color={book.color}
-          />
-        ))}
-      </Instances>
+      {/* WALL OF BOOKS: full-width mounted shelf planks + their brackets (one mesh)
+          and the procedurally-arranged books standing on them (one mesh). */}
+      <mesh geometry={bookWall.shelves} castShadow receiveShadow>
+        <meshStandardMaterial vertexColors roughness={shelving.woodRoughness} />
+      </mesh>
+      <mesh geometry={bookWall.books} castShadow receiveShadow>
+        <meshStandardMaterial vertexColors roughness={shelving.book.roughness} />
+      </mesh>
     </group>
   );
 }

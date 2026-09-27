@@ -28,7 +28,7 @@ birthday card from J to Sam.
 </p>
 
 1. **Open [the machine](https://armanckeser.github.io/four-quarters/)** and click
-   **Load your own pictures**.
+   **Make your own**.
 2. **Drop in photos** and write something on the back of each. The machine fills up as you go.
 3. **Save deck file** and send the `.quarters` file however you already send things:
    iMessage, WhatsApp, email, AirDrop. They open the site, drop the file in, and start
@@ -122,8 +122,7 @@ four-quarters/
 | Layer         | Technology                                             |
 |---------------|--------------------------------------------------------|
 | Rendering     | React Three Fiber (@react-three/fiber + drei)          |
-| 3D            | three.js, three-bvh-csg (CSG coin slots)               |
-| Post          | @react-three/postprocessing, postprocessing            |
+| 3D            | three.js                                               |
 | Audio         | Web Audio API                                          |
 | Framework     | React 19, TypeScript, Vite                             |
 

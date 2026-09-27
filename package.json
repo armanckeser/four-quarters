@@ -8,20 +8,17 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "check:deck": "node scripts/check-deck-codec.mjs",
-    "check:flow": "node scripts/check-deck-flow.mjs"
+    "check:flow": "node scripts/check-deck-flow.mjs",
+    "check:perf": "node scripts/perf-probe.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.0",
-    "@react-three/postprocessing": "^3.0.4",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.468.0",
-    "postprocessing": "^6.39.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.181.2",
-    "three-bvh-csg": "^0.0.18",
-    "three-mesh-bvh": "0.9.10"
+    "three": "^0.181.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
@@ -32,7 +29,6 @@
     "vite": "^7.2.4"
   },
   "overrides": {
-    "three-mesh-bvh": "0.9.10",
     "three": "$three"
   }
 }

@@ -1,5 +1,7 @@
-import { Environment } from '@react-three/drei';
-import { Component, Suspense, type ReactNode } from 'react';
+import { useThree } from '@react-three/fiber';
+import { useEffect } from 'react';
+import { PMREMGenerator, type WebGLRenderTarget } from 'three';
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { asset } from '../../lib/assets';
 
 /**
@@ -13,8 +15,14 @@ import { asset } from '../../lib/assets';
  * The HDRI is a CC0 equirectangular file from Poly Haven, served from public/ (it is
  * not committed; download it with scripts/get-hdri.sh). If the file is missing or
  * fails to load, the scene degrades to its explicit warm lights — see below.
+ *
+ * 1k, not 2k: three's PMREM sizes its cube from the source (width / 4), and a 1k
+ * equirect is the size its docs call ideal — it fills the 256² cube the glossiest
+ * material here can resolve. The 2k file bought a 512² cube (a 24 MB half-float
+ * atlas, plus a same-size blur buffer) behind reflections scaled to 0.35, and was a
+ * 6 MB download on a phone.
  */
-const HDRI_FILE = asset('/hdri/reading_room_2k.hdr');
+const HDRI_FILE = asset('/hdri/reading_room_1k.hdr');
 
 /**
  * IBL contribution only (no background). Kept low so the env fill never blows out the
@@ -24,49 +32,50 @@ const HDRI_FILE = asset('/hdri/reading_room_2k.hdr');
 const ENVIRONMENT_INTENSITY = 0.35;
 
 /**
- * Renders the HDRI as reflections/lighting ONLY (background={false}). Suspends while
- * the file loads (the parent has a null fallback) and is wrapped in an error boundary
- * so a missing or unreadable HDRI never crashes the app.
+ * Loads the HDRI, pre-filters it into a PMREM ONCE, and then throws away everything
+ * but the result: the decoded equirect and the generator's blur buffer are freed as
+ * soon as the environment exists. (drei's <Environment> hands the raw equirect to the
+ * renderer, which keeps the source, the atlas and the generator alive for the life of
+ * the page.)
+ *
+ * Silently no-ops — explicit warm lights remain — if the file is missing or unreadable,
+ * and requests a frame once the reflections land (the canvas renders on demand).
  */
-function ReflectionsHdri(): ReactNode {
-  return (
-    <Environment
-      files={HDRI_FILE}
-      background={false}
-      environmentIntensity={ENVIRONMENT_INTENSITY}
-    />
-  );
-}
+export function LibraryEnvironment(): null {
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const invalidate = useThree((state) => state.invalidate);
 
-/**
- * Catches an HDRI load failure (Suspense handles pending; this handles the throw) and
- * renders nothing, leaving the scene lit by its explicit lights. One-way: once the
- * env fails we stay in the fallback rather than retry-looping.
- */
-class HdriBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
+  useEffect(() => {
+    let cancelled = false;
+    let target: WebGLRenderTarget | null = null;
 
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
+    new HDRLoader().load(
+      HDRI_FILE,
+      (equirect) => {
+        if (cancelled) {
+          equirect.dispose();
+          return;
+        }
+        const generator = new PMREMGenerator(gl);
+        target = generator.fromEquirectangular(equirect);
+        generator.dispose();
+        equirect.dispose();
+        scene.environment = target.texture;
+        scene.environmentIntensity = ENVIRONMENT_INTENSITY;
+        invalidate();
+      },
+      undefined,
+      // Missing / unreadable: stay on the explicit lights. One-way, no retry loop.
+      () => undefined,
+    );
 
-  render(): ReactNode {
-    if (this.state.failed) return null;
-    return this.props.children;
-  }
-}
+    return () => {
+      cancelled = true;
+      if (target && scene.environment === target.texture) scene.environment = null;
+      target?.dispose();
+    };
+  }, [gl, scene, invalidate]);
 
-/**
- * The environment lighting, safe to drop into the scene: it provides reflections-only
- * IBL when the HDRI is present, and silently no-ops (explicit warm lights remain) when
- * it is not.
- */
-export function LibraryEnvironment(): ReactNode {
-  return (
-    <HdriBoundary>
-      <Suspense fallback={null}>
-        <ReflectionsHdri />
-      </Suspense>
-    </HdriBoundary>
-  );
+  return null;
 }

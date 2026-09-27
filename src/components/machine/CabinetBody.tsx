@@ -1,14 +1,18 @@
 import { RoundedBox } from '@react-three/drei';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
+  BoxGeometry,
   BufferAttribute,
   CanvasTexture,
   DataTexture,
+  ExtrudeGeometry,
   LatheGeometry,
   RepeatWrapping,
   RGBAFormat,
+  Shape,
   Vector2,
 } from 'three';
+import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
   cabinet,
   cabinetGeometry,
@@ -24,6 +28,98 @@ import {
   upperPanel,
 } from '../../lib/dimensions';
 import { slotOrder } from '../../data/celebration';
+import { mergeStaticParts } from '../../lib/mergeStatic';
+
+/**
+ * drei's <RoundedBox> geometry as a plain function (same shape, extrude settings and
+ * creased normals — see @react-three/drei core/RoundedBox), so rounded parts can be
+ * merged with each other instead of each being its own mesh.
+ */
+function roundedBoxGeometry(width: number, height: number, depth: number, radius: number, smoothness: number) {
+  const eps = 0.00001;
+  const r = radius - eps;
+  const shape = new Shape();
+  shape.absarc(eps, eps, eps, -Math.PI / 2, -Math.PI, true);
+  shape.absarc(eps, height - r * 2, eps, Math.PI, Math.PI / 2, true);
+  shape.absarc(width - r * 2, height - r * 2, eps, Math.PI / 2, 0, true);
+  shape.absarc(width - r * 2, eps, eps, 0, -Math.PI / 2, true);
+  const geometry = new ExtrudeGeometry(shape, {
+    depth: depth - radius * 2,
+    bevelEnabled: true,
+    bevelSegments: 4 * 2, // drei doubles its bevelSegments prop (default 4)
+    steps: 1,
+    bevelSize: radius - eps,
+    bevelThickness: radius,
+    curveSegments: smoothness,
+  });
+  geometry.center();
+  const creased = toCreasedNormals(geometry, 0.4);
+  if (creased !== geometry) geometry.dispose();
+  return creased;
+}
+
+/**
+ * The cabinet's small repeated trim, each set merged into one mesh (see
+ * lib/mergeStatic): the four chrome glass rails, the four proud corner caps, and the
+ * three card slits. Eleven draw calls (plus their shadow-pass twins) become three.
+ * Each set is a single colour, so the meshes keep their plain material colour rather
+ * than switching on vertex colours (which would compile a separate shader program).
+ */
+function useCabinetTrim() {
+  const trim = useMemo(() => {
+    const glassHalfW = glass.width / 2;
+    const glassHalfH = glass.height / 2;
+    // Pulled back so the rail front edge stays BEHIND the proud corner caps (caps
+    // tuck on top, no z-fight).
+    const chromeZ = glass.z - glass.chromeFrame.depth / 2 - 0.002;
+    const { thickness, depth, color } = glass.chromeFrame;
+    const rails = mergeStaticParts([
+      { geometry: new BoxGeometry(glass.width + thickness, thickness, depth), position: [0, glass.centerY + glassHalfH, chromeZ], color },
+      { geometry: new BoxGeometry(glass.width + thickness, thickness, depth), position: [0, glass.centerY - glassHalfH, chromeZ], color },
+      { geometry: new BoxGeometry(thickness, glass.height, depth), position: [-glassHalfW, glass.centerY, chromeZ], color },
+      { geometry: new BoxGeometry(thickness, glass.height, depth), position: [glassHalfW, glass.centerY, chromeZ], color },
+    ]);
+
+    const cap = frame.cornerCap;
+    // The four caps are the same rounded box, and creasing its normals is the single
+    // most expensive thing the cabinet builds — so crease once and clone.
+    const capGeometry = roundedBoxGeometry(cap.width, cap.height, cap.depth, 0.004, 3);
+    const caps = mergeStaticParts(
+      [
+        { x: -cap.x, y: cap.y, tilt: cap.topTilt },
+        { x: cap.x, y: cap.y, tilt: -cap.topTilt },
+        { x: -cap.x, y: -cap.y, tilt: cap.bottomTilt },
+        { x: cap.x, y: -cap.y, tilt: -cap.bottomTilt },
+      ].map((spec) => ({
+        geometry: capGeometry.clone(),
+        position: [spec.x, spec.y, cap.frontZ - cap.depth / 2] as [number, number, number],
+        rotation: [0, 0, spec.tilt] as [number, number, number],
+        color: frame.colorDark,
+      })),
+    );
+
+    capGeometry.dispose();
+
+    const slits = mergeStaticParts(
+      slotOrder.map((slot) => ({
+        geometry: new BoxGeometry(cardSlit.width, cardSlit.height, cardSlit.depth),
+        position: [slotX[slot], handle.centerY + card.slitLocalY, face.z - 0.002] as [number, number, number],
+        color: cardSlit.color,
+      })),
+    );
+    return { rails, caps, slits };
+  }, []);
+
+  useEffect(
+    () => () => {
+      trim.rails.dispose();
+      trim.caps.dispose();
+      trim.slits.dispose();
+    },
+    [trim],
+  );
+  return trim;
+}
 
 /**
  * The vending-machine BODY: ONE continuous deep red shell (body + front rim are
@@ -141,7 +237,7 @@ export function CabinetBody() {
   // static, so only the cylindrical pole gets the noise maps.
   const redNoise = useMetalNoise(4);
   const blackNoise = useMetalNoise(3);
-  const cap = frame.cornerCap;
+  const trim = useCabinetTrim();
 
   // Swept trumpet/dome base, lathed from the dimensions profile. LatheGeometry's
   // default UVs run (angle, profile) which SMEAR a tiling noise into radial static
@@ -205,11 +301,6 @@ export function CabinetBody() {
   };
   const blackBaseProps = blackPoleProps;
 
-  // Chrome frame rails around the UPPER glass only. Pulled back so the rail
-  // front edge stays BEHIND the proud corner caps (caps tuck on top, no z-fight).
-  const glassHalfW = glass.width / 2;
-  const glassHalfH = glass.height / 2;
-  const chromeZ = glass.z - glass.chromeFrame.depth / 2 - 0.002;
 
   return (
     <group>
@@ -240,31 +331,12 @@ export function CabinetBody() {
 
       {/* Horizontal card-emerge SLITS in the face, one just ABOVE each handle.
           The kraft sleeve + print slide out flat through these (ref-01/04/06). */}
-      {slotOrder.map((slot) => (
-        <mesh
-          key={`slit-${slot}`}
-          position={[slotX[slot], handle.centerY + card.slitLocalY, face.z - 0.002]}
-        >
-          <boxGeometry args={[cardSlit.width, cardSlit.height, cardSlit.depth]} />
-          <meshStandardMaterial color={cardSlit.color} roughness={0.85} metalness={0.1} />
-        </mesh>
-      ))}
+      <mesh geometry={trim.slits}>
+        <meshStandardMaterial color={cardSlit.color} roughness={0.85} metalness={0.1} />
+      </mesh>
 
       {/* Chrome frame rails around the UPPER glass only. */}
-      <mesh position={[0, glass.centerY + glassHalfH, chromeZ]} castShadow>
-        <boxGeometry args={[glass.width + glass.chromeFrame.thickness, glass.chromeFrame.thickness, glass.chromeFrame.depth]} />
-        <meshStandardMaterial {...chromeMaterialProps} />
-      </mesh>
-      <mesh position={[0, glass.centerY - glassHalfH, chromeZ]} castShadow>
-        <boxGeometry args={[glass.width + glass.chromeFrame.thickness, glass.chromeFrame.thickness, glass.chromeFrame.depth]} />
-        <meshStandardMaterial {...chromeMaterialProps} />
-      </mesh>
-      <mesh position={[-glassHalfW, glass.centerY, chromeZ]} castShadow>
-        <boxGeometry args={[glass.chromeFrame.thickness, glass.height, glass.chromeFrame.depth]} />
-        <meshStandardMaterial {...chromeMaterialProps} />
-      </mesh>
-      <mesh position={[glassHalfW, glass.centerY, chromeZ]} castShadow>
-        <boxGeometry args={[glass.chromeFrame.thickness, glass.height, glass.chromeFrame.depth]} />
+      <mesh geometry={trim.rails} castShadow>
         <meshStandardMaterial {...chromeMaterialProps} />
       </mesh>
 
@@ -299,27 +371,9 @@ export function CabinetBody() {
       </mesh>
 
       {/* Four PROUD angled red corner caps standing above the front rim. */}
-      {(
-        [
-          { key: 'tl', x: -cap.x, y: cap.y, tilt: cap.topTilt },
-          { key: 'tr', x: cap.x, y: cap.y, tilt: -cap.topTilt },
-          { key: 'bl', x: -cap.x, y: -cap.y, tilt: cap.bottomTilt },
-          { key: 'br', x: cap.x, y: -cap.y, tilt: -cap.bottomTilt },
-        ] as const
-      ).map((spec) => (
-        <RoundedBox
-          key={`cap-${spec.key}`}
-          args={[cap.width, cap.height, cap.depth]}
-          radius={0.004}
-          smoothness={3}
-          position={[spec.x, spec.y, cap.frontZ - cap.depth / 2]}
-          rotation={[0, 0, spec.tilt]}
-          castShadow
-          receiveShadow
-        >
-          <meshPhysicalMaterial {...darkRedMaterialProps} />
-        </RoundedBox>
-      ))}
+      <mesh geometry={trim.caps} castShadow receiveShadow>
+        <meshPhysicalMaterial {...darkRedMaterialProps} />
+      </mesh>
 
       {/* Glossy-but-worn black pole. */}
       <mesh position={[0, poleCenterY, cabinetGeometry.centerZ]} castShadow receiveShadow>

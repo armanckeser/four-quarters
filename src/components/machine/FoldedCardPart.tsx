@@ -1,12 +1,14 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import {
+  BoxGeometry,
   CanvasTexture,
   Euler,
   Group,
   MathUtils,
   Matrix4,
+  MeshStandardMaterial,
   Quaternion,
   RepeatWrapping,
   SRGBColorSpace,
@@ -14,6 +16,7 @@ import {
 } from 'three';
 import type { CelebrationPrint } from '../../data/celebration';
 import { usePhotoTexture } from '../../lib/textures';
+import { frameDelta } from '../../lib/frameloop';
 import { LABEL_FONT, cabinet, card, lowerPanel, print } from '../../lib/dimensions';
 
 export type CardState = 'stowed' | 'dispensed' | 'open';
@@ -87,7 +90,8 @@ function ScrollableMessage({
   const blockHeightRef = useRef(0);
   const visibleOffsetRef = useRef(0);
 
-  useFrame((_, delta) => {
+  useFrame((state, rawDelta) => {
+    const delta = frameDelta(rawDelta);
     const text = textRef.current;
     if (!text) return;
     const overflow = overflowRef.current;
@@ -98,6 +102,8 @@ function ScrollableMessage({
     const rawTarget = active && scrollState ? scrollState.target : 0;
     const target = Math.min(overflow, Math.max(0, rawTarget));
     visibleOffsetRef.current = MathUtils.damp(visibleOffsetRef.current, target, damp, delta);
+    // On-demand frameloop: keep frames coming until the scroll has eased in.
+    if (Math.abs(visibleOffsetRef.current - target) > 1e-6) state.invalidate();
     const offset = visibleOffsetRef.current;
     // Move the block up by `offset` (scroll) and down by `centerShift` (centre when it
     // fits); shift the clip window by the same so it stays fixed in the print frame.
@@ -278,13 +284,15 @@ export function FoldedCardPart({
   const rootRef = useRef<Group>(null);
   const hingeRef = useRef<Group>(null);
   const flipRef = useRef<Group>(null);
-  const { camera } = useThree();
+  // Selectors, not a bare useThree(): that subscribes to the whole store and
+  // re-renders this card on every resize / dpr step.
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
   const { texture: photo, orientation: detectedOrientation, aspect: photoAspect } =
     usePhotoTexture(item.photo);
 
   const panelWidth = card.panelWidth;
   const panelHeight = card.panelHeight;
-  const thickness = card.thickness;
   const spineHeight = card.spineHeight;
 
   // EVERY print is mounted into the jacket the SAME way (portrait): the insert is
@@ -332,7 +340,7 @@ export function FoldedCardPart({
   const insetMargin = 0.006;
   const fit = Math.min(1, (panelWidth - insetMargin) / printW, (panelHeight - insetMargin) / printH);
 
-  const { kraftMap, kraftBump } = useMemo(() => createKraftTextures(card.boardColor), []);
+  const { board, spine, boardMaterials, kraftMaterial } = cardAssets();
 
   // Animation state — refs only (never React state; this runs every frame).
   const phaseRef = useRef<Phase>('stowed');
@@ -542,7 +550,13 @@ export function FoldedCardPart({
     root.quaternion.copy(viewQuat).slerp(flatQuat, retreat);
   };
 
-  useFrame((_, delta) => {
+  // The canvas renders on demand, and a new `state` / `flipped` changes no three.js
+  // prop here (it only retargets the timeline below), so nothing else would ask for
+  // the frame that starts the motion.
+  useEffect(() => invalidate(), [state, flipped, invalidate]);
+
+  useFrame((frameState, rawDelta) => {
+    const delta = frameDelta(rawDelta);
     const root = rootRef.current;
     const hinge = hingeRef.current;
     const flip = flipRef.current;
@@ -723,6 +737,24 @@ export function FoldedCardPart({
       default:
         break;
     }
+
+    // On-demand frameloop: keep asking for frames until the pose has come to rest.
+    // Only three phases ever rest — stowed, dispensed (after it has emerged) and
+    // open_rest (after any flip); every other phase is a transition by definition.
+    const SETTLED_POS = 1e-5; // metres
+    const SETTLED_ANGLE = 1e-4; // radians
+    const settled =
+      phaseRef.current === phase &&
+      (phase === 'stowed' ||
+        (phase === 'dispensed' &&
+          tRef.current >= card.durSlideout * card.emergeGate &&
+          Math.abs(root.position.z - card.dispensedZ) < SETTLED_POS) ||
+        (phase === 'open_rest' &&
+          flipProgressRef.current >= 1 &&
+          root.position.distanceTo(targetPos) < SETTLED_POS &&
+          root.quaternion.angleTo(viewQuat) < SETTLED_ANGLE &&
+          Math.abs(hinge.rotation.x - card.openHingeAngle) < SETTLED_ANGLE));
+    if (!settled) frameState.invalidate();
   });
 
   /**
@@ -748,50 +780,17 @@ export function FoldedCardPart({
     applyFlipPose(flip, flipProgressRef.current, flippedNow);
   }
 
-  // Jacket board: WHITE outside, KRAFT inside. BoxGeometry face order
-  // [+X,-X,+Y,-Y,+Z,-Z]; the inside face (+Z) is kraft, the rest white.
-  const boardMaterials = (
-    <>
-      <meshStandardMaterial attach="material-0" color={card.whiteColor} roughness={0.9} />
-      <meshStandardMaterial attach="material-1" color={card.whiteColor} roughness={0.9} />
-      <meshStandardMaterial attach="material-2" color={card.whiteColor} roughness={0.9} />
-      <meshStandardMaterial attach="material-3" color={card.whiteColor} roughness={0.9} />
-      <meshStandardMaterial
-        attach="material-4"
-        map={kraftMap}
-        bumpMap={kraftBump}
-        bumpScale={0.12}
-        roughness={0.92}
-      />
-      <meshStandardMaterial attach="material-5" color={card.whiteColor} roughness={0.9} />
-    </>
-  );
-  const kraftMaterial = (
-    <meshStandardMaterial map={kraftMap} bumpMap={kraftBump} bumpScale={0.12} roughness={0.92} />
-  );
-
-  // A jacket panel (board slab, white out / kraft in). `children` ride just proud
-  // of the inner (+Z) face.
-  const Panel = ({ centerY, children }: { centerY: number; children?: React.ReactNode }) => (
-    <group position={[0, centerY, 0]}>
-      <mesh castShadow receiveShadow>
-        <boxGeometry args={[panelWidth, panelHeight, thickness]} />
-        {boardMaterials}
-      </mesh>
-      <group position={[0, 0, thickness / 2 + 0.0006]}>{children}</group>
-    </group>
-  );
-
   return (
     <group ref={rootRef} visible={false} position={[0, card.stowedY, card.stowedZ]}>
       {/* Spine bridging both panels at the crease (y = 0). */}
-      <mesh position={[0, 0, 0]} castShadow>
-        <boxGeometry args={[panelWidth, spineHeight, thickness * 1.15]} />
-        {kraftMaterial}
-      </mesh>
+      <mesh position={[0, 0, 0]} geometry={spine} material={kraftMaterial} castShadow />
 
       {/* BASE panel: hangs below the spine. Carries the PRINT INSERT (flippable). */}
-      <Panel centerY={-(panelHeight / 2 + spineHeight / 2)}>
+      <Panel
+        centerY={-(panelHeight / 2 + spineHeight / 2)}
+        geometry={board}
+        materials={boardMaterials}
+      >
         {/* TAKE hit area: an invisible FAT BOX over the PROTRUDING HEAD of the packet,
             so clicking the visible card tip takes it. When dispensed the jacket lies flat
             (flatQuat): local −Y → world +Z (the head pokes toward the camera) and local
@@ -809,7 +808,7 @@ export function FoldedCardPart({
             }}
           >
             <boxGeometry args={[panelWidth + 0.01, panelHeight * 1.1, 0.05]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            <meshBasicMaterial visible={false} />
           </mesh>
         ) : null}
         <group
@@ -832,7 +831,16 @@ export function FoldedCardPart({
           <group position={[0, 0, print.thickness / 2 + 0.0005]}>
             <mesh position={[0, 0, 0]} rotation={[0, 0, landscape ? -card.landscapeOpenRoll : 0]}>
               <planeGeometry args={[photoPlaneWidth, photoPlaneHeight]} />
-              <meshBasicMaterial map={photo ?? undefined} color="#ffffff" toneMapped={false} />
+              {/* Keyed on the texture's arrival: a material first compiled WITHOUT a map
+                  never picks one up later (three only recompiles on needsUpdate, and R3F
+                  does not set it), so a photo that loaded after the card's first visible
+                  frame stayed blank white. Same fix as FaceThumb's thumbnail material. */}
+              <meshBasicMaterial
+                key={photo ? 'mapped' : 'flat'}
+                map={photo ?? undefined}
+                color="#ffffff"
+                toneMapped={false}
+              />
             </mesh>
             <group rotation={[0, 0, landscape ? -card.landscapeOpenRoll : 0]}>
               <Text
@@ -900,10 +908,92 @@ export function FoldedCardPart({
           (white packet, no artwork showing) when dispensed. Blank kraft interior —
           the only printed surface is the insert on the base. */}
       <group ref={hingeRef} position={[0, 0, card.lidHingeZ]} rotation={[-Math.PI, 0, 0]}>
-        <Panel centerY={panelHeight / 2 + spineHeight / 2} />
+        <Panel
+          centerY={panelHeight / 2 + spineHeight / 2}
+          geometry={board}
+          materials={boardMaterials}
+        />
       </group>
     </group>
   );
+}
+
+/**
+ * A jacket panel (board slab, white out / kraft in). `children` ride just proud of
+ * the inner (+Z) face. Declared at module level: as a component defined INSIDE the
+ * card's render it was a new component type every render, so React unmounted and
+ * rebuilt both panels — meshes, geometry, six materials each — on every App update.
+ */
+function Panel({
+  centerY,
+  geometry,
+  materials,
+  children,
+}: {
+  centerY: number;
+  geometry: BoxGeometry;
+  materials: MeshStandardMaterial[];
+  children?: React.ReactNode;
+}) {
+  return (
+    <group position={[0, centerY, 0]}>
+      <mesh geometry={geometry} material={materials} castShadow receiveShadow />
+      <group position={[0, 0, card.thickness / 2 + 0.0006]}>{children}</group>
+    </group>
+  );
+}
+
+type CardAssets = {
+  board: BoxGeometry;
+  spine: BoxGeometry;
+  /** [white outside, kraft inside] — indexed by the board geometry's two groups. */
+  boardMaterials: MeshStandardMaterial[];
+  kraftMaterial: MeshStandardMaterial;
+};
+
+let sharedCardAssets: CardAssets | null = null;
+
+/**
+ * The jacket's geometry, textures and materials, identical for every card, so built
+ * once per page and shared (never disposed — cards come and go all session). The
+ * kraft texture in particular was regenerated on EVERY dispense, a visible hitch on a
+ * phone right as the card starts to move.
+ *
+ * Board: WHITE outside, KRAFT inside. BoxGeometry's six faces come as six draw groups
+ * ([+X,-X,+Y,-Y,+Z,-Z]; the inside face is +Z). The faces are regrouped by material —
+ * five white, one kraft — so a panel is two draw calls instead of six.
+ */
+function cardAssets(): CardAssets {
+  if (sharedCardAssets) return sharedCardAssets;
+  const { kraftMap, kraftBump } = createKraftTextures(card.boardColor);
+
+  const board = new BoxGeometry(card.panelWidth, card.panelHeight, card.thickness);
+  const index = board.index!;
+  const faces = board.groups.map((group) =>
+    Array.from({ length: group.count }, (_, i) => index.getX(group.start + i)),
+  );
+  const INSIDE = 4; // +Z face
+  const white = faces.filter((_, face) => face !== INSIDE).flat();
+  board.setIndex([...white, ...faces[INSIDE]]);
+  board.clearGroups();
+  board.addGroup(0, white.length, 0);
+  board.addGroup(white.length, faces[INSIDE].length, 1);
+
+  const whiteMaterial = new MeshStandardMaterial({ color: card.whiteColor, roughness: 0.9 });
+  const kraftMaterial = new MeshStandardMaterial({
+    map: kraftMap,
+    bumpMap: kraftBump,
+    bumpScale: 0.12,
+    roughness: 0.92,
+  });
+
+  sharedCardAssets = {
+    board,
+    spine: new BoxGeometry(card.panelWidth, card.spineHeight, card.thickness * 1.15),
+    boardMaterials: [whiteMaterial, kraftMaterial],
+    kraftMaterial,
+  };
+  return sharedCardAssets;
 }
 
 /**
@@ -947,18 +1037,29 @@ function createKraftTextures(baseColor: string) {
     colorCtx.fill();
   }
 
+  // Paper speckle: a dark or light fleck per sampled pixel, plus a matching bump dent
+  // or bump. Blended straight into the pixel buffers — the same "source-over" blend
+  // a 1×1 fillRect does — instead of ~24k fillRect calls, each of which re-parsed a
+  // colour string (the slowest part of building a card on a phone).
+  const colorImage = colorCtx.getImageData(0, 0, size, size);
+  const bumpImage = bumpCtx.getImageData(0, 0, size, size);
+  const colorPixels = colorImage.data;
+  const bumpPixels = bumpImage.data;
   const speckleCount = size * size * 0.18;
   for (let i = 0; i < speckleCount; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
+    const pixel = ((Math.random() * size) | 0) + ((Math.random() * size) | 0) * size;
     const d = (Math.random() - 0.5) * 2;
     const colorAlpha = 0.04 + Math.random() * 0.08;
-    colorCtx.fillStyle = d < 0 ? `rgba(70, 52, 28, ${colorAlpha})` : `rgba(255, 248, 230, ${colorAlpha})`;
-    colorCtx.fillRect(x, y, 1, 1);
-    const bumpShade = 128 + d * (40 + Math.random() * 40);
-    bumpCtx.fillStyle = `rgb(${bumpShade | 0}, ${bumpShade | 0}, ${bumpShade | 0})`;
-    bumpCtx.fillRect(x, y, 1, 1);
+    const [r, g, b] = d < 0 ? [70, 52, 28] : [255, 248, 230];
+    const o = pixel * 4;
+    colorPixels[o] += (r - colorPixels[o]) * colorAlpha;
+    colorPixels[o + 1] += (g - colorPixels[o + 1]) * colorAlpha;
+    colorPixels[o + 2] += (b - colorPixels[o + 2]) * colorAlpha;
+    const bumpShade = (128 + d * (40 + Math.random() * 40)) | 0;
+    bumpPixels[o] = bumpPixels[o + 1] = bumpPixels[o + 2] = bumpShade;
   }
+  colorCtx.putImageData(colorImage, 0, 0);
+  bumpCtx.putImageData(bumpImage, 0, 0);
 
   const kraftMap = new CanvasTexture(colorCanvas);
   kraftMap.colorSpace = SRGBColorSpace;

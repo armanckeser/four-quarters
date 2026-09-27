@@ -60,3 +60,27 @@ body,
   white-space: nowrap;
   border: 0;
 }
+
+/* The scene vignette, formerly a postprocessing VignetteEffect (offset 0.35, darkness
+   0.35) — which cost a full-screen float render target. Its curve is
+   `color *= smoothstep(0.8, 0.28, 0.7 * distance(uv, center))`: untouched inside ~57%
+   of the way to the corner, down to ×0.63 (linear) at the corners. These stops sample
+   that curve, converted to a display-space black overlay (1 − f^(1/2.2)). The ellipse
+   is sized to the box, so the distance is measured in uv like the shader's. */
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse farthest-corner at 50% 50%,
+    rgba(0, 0, 0, 0) 56.5%,
+    rgba(0, 0, 0, 0.008) 65%,
+    rgba(0, 0, 0, 0.021) 70%,
+    rgba(0, 0, 0, 0.038) 75%,
+    rgba(0, 0, 0, 0.06) 80%,
+    rgba(0, 0, 0, 0.087) 85%,
+    rgba(0, 0, 0, 0.117) 90%,
+    rgba(0, 0, 0, 0.152) 95%,
+    rgba(0, 0, 0, 0.191) 100%
+  );
+}

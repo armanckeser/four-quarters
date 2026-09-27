@@ -190,26 +190,23 @@ export function Builder({ onClose }: { onClose: () => void }) {
           maxLength={80}
           onChange={(event) => update({ ...current, name: event.target.value })}
         />
-        <button className="builder-close" onClick={onClose} aria-label="Close the builder">
+        <button className="builder-close" onClick={onClose} aria-label="Close">
           ✕
         </button>
       </header>
 
-      <p className="builder-note">
-        Pictures stay on this device. Nothing is uploaded — the deck you save is a file you
-        send yourself, and whoever opens it reads it straight off their own disk.
-      </p>
+      <p className="builder-note">Pictures stay on this device. Nothing is uploaded.</p>
 
       <div className="builder-actions">
         <button onClick={() => addRef.current?.click()} disabled={working !== null}>
           Add pictures
         </button>
         <button onClick={() => openRef.current?.click()} disabled={working !== null}>
-          Open a deck file
+          Open deck
         </button>
         {deck ? (
           <button className="builder-quiet" onClick={useBundled} disabled={working !== null}>
-            Back to the shipped prints
+            Use sample prints
           </button>
         ) : null}
         <input
@@ -240,10 +237,13 @@ export function Builder({ onClose }: { onClose: () => void }) {
       {error ? <p className="builder-error">{error}</p> : null}
 
       {current.cards.length === 0 ? (
-        <p className="builder-empty">
-          Drop pictures anywhere on the page, or use the button. Each one becomes a card the
-          machine can vend.
-        </p>
+        <button
+          className="builder-empty"
+          onClick={() => addRef.current?.click()}
+          disabled={working !== null}
+        >
+          Tap or drop pictures here
+        </button>
       ) : (
         <ol className="builder-cards">
           {current.cards.map((card, index) => (
@@ -271,10 +271,7 @@ export function Builder({ onClose }: { onClose: () => void }) {
             onChange={(event) => setPassphrase(event.target.value)}
           />
         </label>
-        <p className="builder-lock-note">
-          Locks the file itself. Only worth it if you send the word by a different route
-          than the file — both down the same chat protects nothing.
-        </p>
+        <p className="builder-lock-note">Send it separately from the file.</p>
         <button
           className="builder-save"
           onClick={saveDeckFile}
@@ -326,7 +323,7 @@ function CardRow({
         />
         <textarea
           value={card.message}
-          placeholder="What it says on the back (optional)"
+          placeholder="Message on the back (optional)"
           maxLength={2000}
           rows={2}
           onChange={(event) => onPatch(card.id, { message: event.target.value })}
