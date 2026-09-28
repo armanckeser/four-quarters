@@ -159,14 +159,18 @@ const addInput = await send('Runtime.evaluate', {
 });
 await send('DOM.setFileInputFiles', {
   objectId: addInput.result.objectId,
-  files: ['mermaid.jpg', 'sailboat.jpg', 'knicks.jpg'].map((f) => join(PRINTS, f)),
+  files: ['cake.svg', 'lighthouse.svg', 'teapot.svg'].map((f) => join(PRINTS, f)),
 });
-await until('shrinking to finish', `!document.querySelector('.builder-status')`);
+// Wait for the rows themselves: the status line only appears once the first
+// resize starts, so "no status" is also true before anything has happened.
+await until('shrinking to finish', `document.querySelectorAll('.builder-card').length === 3 || !!document.querySelector('.builder-error')`, 90000);
 
+const addError = (await evalJs(`document.querySelector('.builder-error') ? document.querySelector('.builder-error').textContent : null`)).value;
+ok('no error while adding', addError === null, addError ?? '');
 ok('three card rows', (await evalJs(`document.querySelectorAll('.builder-card').length`)).value === 3);
 ok('empty state gone', (await evalJs(`!document.querySelector('.builder-empty')`)).value === true);
-const saveLabel = (await evalJs(`document.querySelector('.builder-save').textContent`)).value;
-ok('save button shows a size', /about \d+ KB/.test(saveLabel), saveLabel);
+const saveLabel = (await evalJs(`document.querySelector('.builder-next').textContent`)).value;
+ok('next button shows a size', /about \d+ KB/.test(saveLabel), saveLabel);
 
 const parsed = JSON.parse((await evalJs(`
   (async () => {
@@ -214,6 +218,19 @@ const stored = (await evalJs(`
 `)).value;
 ok('deck saved with its name', stored.includes('"cards":3') && stored.includes('Test deck'), stored);
 
+console.log('\nthe save step explains the file');
+await evalJs(`document.querySelector('.builder-next').click()`);
+await new Promise((r) => setTimeout(r, 300));
+const saveStep = JSON.parse((await evalJs(`JSON.stringify({
+  heading: document.querySelector('#save-heading') && document.querySelector('#save-heading').textContent,
+  file: document.querySelector('.builder-file-meta strong') && document.querySelector('.builder-file-meta strong').textContent,
+  inside: document.querySelectorAll('.builder-explain li').length,
+  current: document.querySelector('[aria-current=step]') && document.querySelector('[aria-current=step]').textContent
+})`)).value);
+ok('on the save step', saveStep.current === '2Save', saveStep.current);
+ok('names the file before downloading', saveStep.file === 'test-deck.quarters', saveStep.file);
+ok('lists what is inside', saveStep.inside >= 2, String(saveStep.inside));
+
 console.log('\nexport writes a real file');
 // The download never lands in headless, so intercept the anchor the button
 // clicks and read the blob it points at — same bytes, same code path.
@@ -235,13 +252,34 @@ const file = JSON.parse((await evalJs(`
       });
       HTMLAnchorElement.prototype.click = realClick;
     };
-    document.querySelector('.builder-save').click();
+    document.querySelector('.builder-step .builder-primary').click();
   })
 `)).value);
 ok('file is a Four Quarters deck', file.magic === 'QUARTERS', `magic=${file.magic} v=${file.version} flags=${file.flags}`);
 ok('named from the deck title', file.name === 'test-deck.quarters', file.name);
 ok('gzipped, not encrypted', file.flags === 2, 'flags=' + file.flags);
-ok('plausible size', file.size > 10000 && file.size < 200000, Math.round(file.size / 1024) + ' KB');
+ok('plausible size', file.size > 1000 && file.size < 200000, Math.round(file.size / 1024) + ' KB');
+
+await until('the saved confirmation', `!!document.querySelector('.builder-done')`, 5000);
+ok('confirms the download', (await evalJs(`!!document.querySelector('.builder-done')`)).value === true);
+
+console.log('\nthe send step writes the link');
+await evalJs(`[...document.querySelectorAll('.builder-step .builder-primary')].find(b => /send/i.test(b.textContent)).click()`);
+await new Promise((r) => setTimeout(r, 300));
+await evalJs(`
+  (() => {
+    const el = document.querySelector('#send-note');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, 'Happy birthday & more #1');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  })()
+`);
+await new Promise((r) => setTimeout(r, 200));
+const preview = (await evalJs(`document.querySelector('.builder-preview').value`)).value;
+const link = (preview.match(/https?:\/\/\S+/) ?? [''])[0];
+ok('message starts with the note', preview.startsWith('Happy birthday & more #1'), preview.split('\n')[0]);
+ok('message names the attachment', preview.includes('test-deck.quarters'));
+ok('message carries an invite link', link.includes('#open?'), link);
+ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 
 // ---- the recipient's path ---------------------------------------------------
 // The half that actually matters: the file arrives on a machine that has never
@@ -251,15 +289,28 @@ writeFileSync(DECK_PATH, Buffer.from(file.bytes.split(',').map(Number)));
 console.log(`  wrote exported.quarters (${Math.round(file.size / 1024)} KB)`);
 
 await wipe();
-await settle();
-await evalJs(`document.querySelector('.builder-open').click()`);
-await new Promise((r) => setTimeout(r, 400));
-ok('clean machine starts on the shipped prints', (await evalJs(`!!document.querySelector('.builder-empty')`)).value === true);
+await send('Page.navigate', { url: 'about:blank' });
+await send('Page.navigate', { url: link });
+await until('the invite panel', `!!document.querySelector('.receive')`);
+const invited = JSON.parse((await evalJs(`JSON.stringify({
+  note: document.querySelector('.receive-note') && document.querySelector('.receive-note').textContent,
+  heading: document.querySelector('#receive-heading').textContent,
+  drop: document.querySelector('.receive-drop') && document.querySelector('.receive-drop').textContent
+})`)).value);
+ok('link opens with the note', invited.note === 'Happy birthday & more #1', invited.note ?? 'none');
+ok('link opens with the deck name', invited.heading === 'Test deck', invited.heading);
+ok('drop zone names the file', (invited.drop ?? '').includes('test-deck.quarters'), invited.drop ?? '');
 
-const openInput = await send('Runtime.evaluate', {
-  expression: `document.querySelectorAll('.builder input[type=file]')[1]`,
-});
-await send('DOM.setFileInputFiles', { objectId: openInput.result.objectId, files: [DECK_PATH] });
+const receiveInput = await send('Runtime.evaluate', { expression: `document.querySelector('.receive input[type=file]')` });
+await send('DOM.setFileInputFiles', { objectId: receiveInput.result.objectId, files: [DECK_PATH] });
+await until('the deck to load from the link', `/in the machine/.test(document.querySelector('#receive-heading')?.textContent ?? '')`);
+ok('loaded from the link', (await evalJs(`/in the machine/.test(document.querySelector('#receive-heading')?.textContent ?? '')`)).value === true);
+await evalJs(`document.querySelector('.receive-primary').click()`);
+await new Promise((r) => setTimeout(r, 300));
+ok('invite cleared from the address bar', (await evalJs(`location.hash`)).value === '');
+ok('panel closed', (await evalJs(`!document.querySelector('.receive')`)).value === true);
+
+await evalJs(`document.querySelector('.builder-open').click()`);
 await until('the deck to open', `document.querySelectorAll('.builder-card').length === 3`);
 // Rows render one tick before their thumbnails: the object URL is minted in an
 // effect, so the <img> lands on the following commit.

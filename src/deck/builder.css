@@ -54,8 +54,7 @@
 }
 
 .builder-note,
-.builder-empty,
-.builder-lock-note {
+.builder-empty {
   margin: 0;
   font-size: 12.5px;
   line-height: 1.5;
@@ -184,7 +183,8 @@
 
 .builder-fields input,
 .builder-fields textarea,
-.builder-lock input {
+.builder-lock input,
+.builder-howto textarea {
   width: 100%;
   padding: 6px 8px;
   font: inherit;
@@ -202,7 +202,8 @@
 
 .builder-fields input:focus,
 .builder-fields textarea:focus,
-.builder-lock input:focus {
+.builder-lock input:focus,
+.builder-howto textarea:focus {
   outline: 2px solid #c2452f;
   outline-offset: -1px;
 }
@@ -228,27 +229,462 @@
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid #e7e2d6;
+  /* Pinned, so the way on is visible however long the card list gets. The
+     negative bottom and padding cancel the panel's own padding. */
+  position: sticky;
+  bottom: -18px;
+  padding-bottom: 18px;
+  margin-bottom: -18px;
+  background: #fbfaf5;
 }
 
-.builder-lock {
+/* One button per step that moves you on. Same red as the machine's shell. */
+.builder button.builder-primary {
+  padding: 10px 14px;
+  font-weight: 600;
+  color: #fbfaf5;
+  background: #c2452f;
+  border-color: #a63b28;
+}
+
+.builder button.builder-primary:hover:not(:disabled) {
+  border-color: #7f2c1d;
+}
+
+.builder button.builder-link {
+  align-self: flex-start;
+  padding: 4px 0;
+  color: #6b6559;
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---- the step indicator ------------------------------------------------------ */
+
+.builder-head {
+  justify-content: space-between;
+}
+
+.builder-steps ol {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.builder .builder-steps button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  padding: 5px 10px 5px 5px;
+  color: #6b6559;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 999px;
+}
+
+.builder .builder-steps button[aria-current='step'] {
+  color: #17202a;
+  font-weight: 600;
+  background: #fff;
+  border-color: #ded9cb;
+}
+
+.builder-step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b6559;
+  background: #ece8dd;
+  border-radius: 50%;
+}
+
+[aria-current='step'] .builder-step-num {
+  color: #fbfaf5;
+  background: #c2452f;
+}
+
+.is-done .builder-step-num {
+  color: #fbfaf5;
+  background: #5b7f4f;
+}
+
+/* ---- save & send ------------------------------------------------------------- */
+
+.builder-step {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.builder-step h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  color: #17202a;
+}
+
+.builder-lede,
+.builder-step p,
+.builder-explain li {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #3d4550;
+}
+
+.builder-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid #e7e2d6;
+  border-radius: 10px;
+}
+
+/* A kraft packet, like the card that comes out of the machine. */
+.builder-file-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 46px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #6e5233;
+  background: #d8bf98;
+  border-radius: 4px 12px 4px 4px;
+}
+
+.builder-file-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+}
+
+.builder-file-meta strong {
+  overflow-wrap: anywhere;
+}
+
+.builder-file-meta span {
   font-size: 12.5px;
   color: #6b6559;
 }
 
-.builder-lock span {
-  flex: none;
+.builder-explain {
+  padding: 12px 14px;
+  background: #f4f1e8;
+  border-radius: 10px;
 }
 
-.builder-save {
-  padding: 10px 12px !important;
+.builder-explain h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
   font-weight: 600;
-  color: #fbfaf5 !important;
-  background: #c2452f !important;
-  border-color: #a63b28 !important;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b6559;
 }
+
+.builder-explain ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.builder .builder-explain p {
+  font-size: 12.5px;
+  color: #6b6559;
+}
+
+.builder-lock summary,
+.receive-help summary {
+  font-size: 13px;
+  color: #3d4550;
+  cursor: pointer;
+}
+
+.builder-lock label {
+  display: block;
+  margin: 8px 0 6px;
+}
+
+.builder .builder-lock p {
+  font-size: 12.5px;
+  color: #6b6559;
+}
+
+.builder-step-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #e7e2d6;
+}
+
+.builder .builder-done {
+  padding: 8px 10px;
+  color: #34502b;
+  background: #e8f0e2;
+  border-radius: 8px;
+}
+
+.builder .builder-warn {
+  padding: 8px 10px;
+  color: #6e4b12;
+  background: #fbf1dc;
+  border-radius: 8px;
+}
+
+.builder-warn .builder-link {
+  display: inline;
+  color: inherit !important;
+}
+
+.builder-howto {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: howto;
+}
+
+.builder-howto > li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 32px;
+  counter-increment: howto;
+}
+
+.builder-howto > li::before {
+  content: counter(howto);
+  position: absolute;
+  left: 0;
+  top: -1px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fbfaf5;
+  background: #17202a;
+  border-radius: 50%;
+}
+
+.builder-howto label,
+.builder-howto-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #17202a;
+}
+
+.builder-howto textarea {
+  resize: vertical;
+}
+
+.builder-howto textarea.builder-preview {
+  font-size: 12.5px;
+  color: #3d4550;
+  background: #f4f1e8;
+}
+
+.builder-count {
+  font-size: 11.5px;
+  color: #8a8474;
+}
+
+.builder-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.builder-share {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e7e2d6;
+  border-radius: 10px;
+}
+
+.builder-next {
+  width: 100%;
+}
+
+/* ---- the recipient's panel --------------------------------------------------- */
+
+.receive {
+  position: fixed;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 22px;
+  overflow-y: auto;
+  background: #fbfaf5;
+  border: 1px solid #ded9cb;
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(23, 32, 42, 0.22);
+}
+
+.receive h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: #17202a;
+  overflow-wrap: anywhere;
+}
+
+.receive-eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #c2452f;
+}
+
+/* Their words, set apart from ours. */
+.receive-note {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 15px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #3a2c1c;
+  background: #eadbc2;
+  border-radius: 4px 12px 12px 12px;
+}
+
+.receive-body,
+.receive-small,
+.receive-help li {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #3d4550;
+}
+
+.receive-small {
+  font-size: 12.5px;
+  color: #6b6559;
+}
+
+.receive button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.receive button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.receive-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 26px 16px;
+  color: #17202a;
+  background: #fff;
+  border: 2px dashed #c9c1ad;
+  border-radius: 12px;
+}
+
+.receive-drop:hover:not(:disabled) {
+  border-color: #c2452f;
+}
+
+.receive-drop strong {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.receive-drop span {
+  font-size: 12.5px;
+  color: #6b6559;
+}
+
+.receive-primary {
+  padding: 11px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fbfaf5;
+  background: #c2452f;
+  border: 1px solid #a63b28;
+  border-radius: 8px;
+}
+
+.receive-quiet {
+  align-self: center;
+  padding: 4px;
+  font-size: 13px;
+  color: #6b6559;
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.receive-pass {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #17202a;
+}
+
+.receive-pass input {
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 400;
+  background: #fff;
+  border: 1px solid #ded9cb;
+  border-radius: 8px;
+}
+
+.receive-error {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #8c2f1e;
+  background: #fbeceb;
+  border-radius: 8px;
+}
+
+.receive-help ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.receive-help li + li {
+  margin-top: 4px;
+}
+
 
 /* The opener, when the panel is closed. */
 .builder-open {
@@ -275,5 +711,14 @@
   .builder {
     width: 100vw;
     border-left: 0;
+  }
+
+  /* A phone: a bottom sheet, so the machine above it stays in view. */
+  .receive {
+    top: auto;
+    right: 16px;
+    bottom: 16px;
+    transform: none;
+    max-height: calc(100vh - 80px);
   }
 }

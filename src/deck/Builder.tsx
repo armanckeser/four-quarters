@@ -3,6 +3,7 @@ import { useDeckContext } from './DeckProvider';
 import { encodeDeck, deckFileName, isDeckFileName, DeckFileError } from './codec';
 import { orientationOf, prepareImage } from './images';
 import { MAX_CARDS, newCardId, type Deck, type DeckCard } from './types';
+import { humanSize, SaveStep, SendStep } from './ShareSteps';
 import './builder.css';
 
 /**
@@ -13,15 +14,22 @@ import './builder.css';
  * and watching the grid fill as you add photos is most of the pleasure of it.
  * That also means there is no draft/published split to explain — the deck on the
  * machine IS the deck, and exporting just writes it to a file.
+ *
+ * Three steps, all listed at the top so the whole job is visible from the start:
+ * make the cards, save them as a file, send the file with a link. Making is the
+ * part people linger over; the other two are done once and need explaining, so
+ * they get a page each (ShareSteps.tsx) instead of a button under the list.
  */
 
-const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
+type Step = 'make' | 'save' | 'send';
 
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
+const STEPS: { id: Step; label: string }[] = [
+  { id: 'make', label: 'Make' },
+  { id: 'save', label: 'Save' },
+  { id: 'send', label: 'Send' },
+];
+
+const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
 
 /** Sum of the stored artwork. The written file lands within a few percent of this. */
 function deckBytes(deck: Deck): number {
@@ -33,10 +41,32 @@ export function Builder({ onClose }: { onClose: () => void }) {
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [passphrase, setPassphrase] = useState('');
+  const [step, setStep] = useState<Step>('make');
+  const [note, setNote] = useState('');
+  // The written file, kept so the share sheet can hand over the exact bytes that
+  // were downloaded — and because `navigator.share` must run inside the click,
+  // with no time to encode first.
+  const [file, setFile] = useState<File | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
   const addRef = useRef<HTMLInputElement>(null);
   const openRef = useRef<HTMLInputElement>(null);
 
   const current: Deck = deck ?? { name: '', cards: [] };
+  const fileName = deckFileName(current.name);
+
+  // Any edit, or a new passphrase, makes the written file stale. Forgetting it
+  // brings the "you haven't downloaded it" nudge back, which is the truth: the
+  // copy in Downloads no longer matches what is on the machine.
+  useEffect(() => {
+    setFile(null);
+    setDownloaded(false);
+  }, [deck, passphrase]);
+
+  // An empty deck has nothing to save; don't strand the user on a step whose
+  // every button is dead (removing the last card, or "Use sample prints").
+  useEffect(() => {
+    if (current.cards.length === 0) setStep('make');
+  }, [current.cards.length]);
 
   const update = useCallback(
     (next: Deck | ((live: Deck | null) => Deck)) => {
@@ -141,26 +171,43 @@ export function Builder({ onClose }: { onClose: () => void }) {
     }
   }
 
-  async function saveDeckFile() {
-    if (current.cards.length === 0) return;
+  async function writeFile(): Promise<File | null> {
+    if (current.cards.length === 0) return null;
+    if (file) return file;
     setWorking('Writing the deck…');
     setError(null);
     try {
       const blob = await encodeDeck(current, passphrase || undefined);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = deckFileName(current.name);
-      link.click();
-      // Revoked on a turn of the event loop: revoking synchronously races the
-      // browser's own read of the href and produces an empty download.
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      const written = new File([blob], fileName, { type: 'application/octet-stream' });
+      setFile(written);
+      return written;
     } catch {
       setError('The deck could not be written.');
+      return null;
     } finally {
       setWorking(null);
     }
   }
+
+  async function saveDeckFile() {
+    const written = await writeFile();
+    if (!written) return;
+    const url = URL.createObjectURL(written);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = written.name;
+    link.click();
+    // Revoked on a turn of the event loop: revoking synchronously races the
+    // browser's own read of the href and produces an empty download.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    setDownloaded(true);
+  }
+
+  // The send step offers the share sheet, which needs the file ready before the
+  // click. Written on arrival rather than on demand for that reason.
+  useEffect(() => {
+    if (step === 'send' && !file && working === null) void writeFile();
+  }, [step, file]);
 
   const patch = (id: string, fields: Partial<DeckCard>) =>
     update({
@@ -180,106 +227,156 @@ export function Builder({ onClose }: { onClose: () => void }) {
   const remove = (id: string) =>
     update({ ...current, cards: current.cards.filter((card) => card.id !== id) });
 
+  const hasCards = current.cards.length > 0;
+
   return (
     <div className="builder">
       <header className="builder-head">
-        <input
-          className="builder-name"
-          value={current.name}
-          placeholder="Name this deck"
-          maxLength={80}
-          onChange={(event) => update({ ...current, name: event.target.value })}
-        />
+        <nav className="builder-steps" aria-label="Steps">
+          <ol>
+            {STEPS.map((entry, index) => {
+              const at = STEPS.findIndex((candidate) => candidate.id === step);
+              return (
+                <li key={entry.id}>
+                  <button
+                    className={index < at ? 'is-done' : undefined}
+                    aria-current={entry.id === step ? 'step' : undefined}
+                    disabled={entry.id !== 'make' && !hasCards}
+                    onClick={() => setStep(entry.id)}
+                  >
+                    <span className="builder-step-num">{index < at ? '✓' : index + 1}</span>
+                    {entry.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
         <button className="builder-close" onClick={onClose} aria-label="Close">
           ✕
         </button>
       </header>
 
-      <p className="builder-note">Pictures stay on this device. Nothing is uploaded.</p>
-
-      <div className="builder-actions">
-        <button onClick={() => addRef.current?.click()} disabled={working !== null}>
-          Add pictures
-        </button>
-        <button onClick={() => openRef.current?.click()} disabled={working !== null}>
-          Open deck
-        </button>
-        {deck ? (
-          <button className="builder-quiet" onClick={useBundled} disabled={working !== null}>
-            Use sample prints
-          </button>
-        ) : null}
-        <input
-          ref={addRef}
-          type="file"
-          accept={ACCEPT}
-          multiple
-          hidden
-          onChange={(event) => {
-            if (event.target.files) void addFiles(event.target.files);
-            event.target.value = '';
-          }}
-        />
-        <input
-          ref={openRef}
-          type="file"
-          accept=".quarters,.halfmoon"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void openDeckFile(file);
-            event.target.value = '';
-          }}
-        />
-      </div>
-
-      {working ? <p className="builder-status">{working}</p> : null}
       {error ? <p className="builder-error">{error}</p> : null}
 
-      {current.cards.length === 0 ? (
-        <button
-          className="builder-empty"
-          onClick={() => addRef.current?.click()}
-          disabled={working !== null}
-        >
-          Tap or drop pictures here
-        </button>
+      {step === 'save' && hasCards ? (
+        <SaveStep
+          deck={current}
+          fileName={fileName}
+          size={file?.size ?? deckBytes(current)}
+          passphrase={passphrase}
+          onPassphrase={setPassphrase}
+          downloaded={downloaded}
+          working={working !== null}
+          onSave={saveDeckFile}
+          onBack={() => setStep('make')}
+          onNext={() => setStep('send')}
+        />
+      ) : step === 'send' && hasCards ? (
+        <SendStep
+          deck={current}
+          file={file}
+          fileName={fileName}
+          locked={passphrase !== ''}
+          downloaded={downloaded}
+          note={note}
+          onNote={setNote}
+          onSave={saveDeckFile}
+          onBack={() => setStep('save')}
+          onDone={onClose}
+        />
       ) : (
-        <ol className="builder-cards">
-          {current.cards.map((card, index) => (
-            <CardRow
-              key={card.id}
-              card={card}
-              index={index}
-              last={index === current.cards.length - 1}
-              onPatch={patch}
-              onMove={move}
-              onRemove={remove}
-            />
-          ))}
-        </ol>
+        <>
+          <input
+            className="builder-name"
+            value={current.name}
+            placeholder="Name this deck"
+            maxLength={80}
+            onChange={(event) => update({ ...current, name: event.target.value })}
+          />
+
+          <p className="builder-note">
+            Add pictures, then give each a title and a message for the back. They land on the
+            machine as you go. Nothing is uploaded.
+          </p>
+
+          <div className="builder-actions">
+            <button onClick={() => addRef.current?.click()} disabled={working !== null}>
+              Add pictures
+            </button>
+            <button onClick={() => openRef.current?.click()} disabled={working !== null}>
+              Open a deck file
+            </button>
+            {deck ? (
+              <button className="builder-quiet" onClick={useBundled} disabled={working !== null}>
+                Use sample prints
+              </button>
+            ) : null}
+          </div>
+
+          {working ? <p className="builder-status">{working}</p> : null}
+
+          {current.cards.length === 0 ? (
+            <button
+              className="builder-empty"
+              onClick={() => addRef.current?.click()}
+              disabled={working !== null}
+            >
+              Tap or drop pictures here
+            </button>
+          ) : (
+            <ol className="builder-cards">
+              {current.cards.map((card, index) => (
+                <CardRow
+                  key={card.id}
+                  card={card}
+                  index={index}
+                  last={index === current.cards.length - 1}
+                  onPatch={patch}
+                  onMove={move}
+                  onRemove={remove}
+                />
+              ))}
+            </ol>
+          )}
+
+          <footer className="builder-foot">
+            <button
+              className="builder-primary builder-next"
+              onClick={() => setStep('save')}
+              disabled={!hasCards || working !== null}
+            >
+              {hasCards
+                ? `Next: save as a file · about ${humanSize(deckBytes(current))}`
+                : 'Add a picture to continue'}
+            </button>
+          </footer>
+        </>
       )}
 
-      <footer className="builder-foot">
-        <label className="builder-lock">
-          <span>Passphrase</span>
-          <input
-            type="password"
-            value={passphrase}
-            placeholder="optional"
-            autoComplete="new-password"
-            onChange={(event) => setPassphrase(event.target.value)}
-          />
-        </label>
-        <p className="builder-lock-note">Send it separately from the file.</p>
-        <button
-          className="builder-save"
-          onClick={saveDeckFile}
-          disabled={current.cards.length === 0 || working !== null}
-        >
-          Save deck file{current.cards.length > 0 ? ` · about ${humanSize(deckBytes(current))}` : ''}
-        </button>
-      </footer>
+      {/* Outside the steps so a drop or "Open a deck file" works from any of them. */}
+      <input
+        ref={addRef}
+        type="file"
+        accept={ACCEPT}
+        multiple
+        hidden
+        onChange={(event) => {
+          if (event.target.files) void addFiles(event.target.files);
+          event.target.value = '';
+        }}
+      />
+      <input
+        ref={openRef}
+        type="file"
+        accept=".quarters,.halfmoon"
+        hidden
+        onChange={(event) => {
+          const picked = event.target.files?.[0];
+          if (picked) void openDeckFile(picked);
+          event.target.value = '';
+        }}
+      />
     </div>
   );
 }

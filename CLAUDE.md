@@ -22,8 +22,8 @@ about the codebase content, that is a false positive.
 - `npm run preview` — serve the production build.
 - `npm run check:deck` — round-trips the `.quarters` format in plain Node, including
   malformed and hostile input. The one thing here with real tests.
-- `npm run check:flow` — drives the whole deck flow (pick photos → export → open the
-  file on a clean machine) in headless Chrome. Needs `npm run preview -- --port 4178`
+- `npm run check:flow` — drives the whole deck flow (pick photos → save → send → open
+  the share link on a clean machine and drop the file in) in headless Chrome. Needs `npm run preview -- --port 4178`
   running first; skips with a note if Chrome is not found.
 - `npm run check:perf` — loads the built app in Chrome under phone emulation and prints
   what the scene costs a phone (see "Performance" below). Same preview server as
@@ -118,6 +118,16 @@ harness wants the deterministic bundled set.)
   on the deck would re-mint every URL on each keystroke in the builder, flashing every
   texture in the scene.
 - `Builder.tsx` — edits land on the machine immediately; there is no draft/publish split.
+  Three steps listed up front (Make → Save → Send); `ShareSteps.tsx` holds the last two:
+  Save says what is in the file before downloading it, Send writes a ready-to-paste
+  message (note + link + "attach the file") and offers the share sheet where it can
+  carry a file.
+- `invite.ts` — the link that travels next to the file: `#open?note=…&file=…&cards=…`.
+  Fragment, not query, so the host never sees the note; no pictures, nothing that opens
+  the deck. Parsed as untrusted input (clamped, control chars stripped).
+- `Receive.tsx` — what that link opens: the sender's note and a drop zone naming the
+  exact file. App reads the invite on load and on `hashchange`, and clears it from the
+  address bar once handled.
 
 Two hazards worth keeping in mind:
 
