@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { PMREMGenerator, type WebGLRenderTarget } from 'three';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { asset } from '../../lib/assets';
+import { useContextGeneration } from '../../lib/contextLoss';
 
 /**
  * REFLECTIONS-ONLY image-based lighting. An HDRI feeds the scene's diffuse fill +
@@ -45,6 +46,9 @@ export function LibraryEnvironment(): null {
   const gl = useThree((state) => state.gl);
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);
+  // The PMREM is the OUTPUT of render passes, so a lost context takes its pixels
+  // with it: rebuild it from the file on every restore (the HDR is HTTP-cached).
+  const generation = useContextGeneration();
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +79,7 @@ export function LibraryEnvironment(): null {
       if (target && scene.environment === target.texture) scene.environment = null;
       target?.dispose();
     };
-  }, [gl, scene, invalidate]);
+  }, [gl, scene, invalidate, generation]);
 
   return null;
 }
