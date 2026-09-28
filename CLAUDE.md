@@ -22,7 +22,7 @@ about the codebase content, that is a false positive.
 - `npm run preview` — serve the production build.
 - `npm run check:deck` — round-trips the `.quarters` format in plain Node, including
   malformed and hostile input. The one thing here with real tests.
-- `npm run check:flow` — drives the whole deck flow (pick photos → save → send → open
+- `npm run check:flow` — drives the whole deck flow (pick photos → name + note → download → open
   the share link on a clean machine and drop the file in) in headless Chrome. Needs `npm run preview -- --port 4178`
   running first; skips with a note if Chrome is not found.
 - `npm run check:perf` — loads the built app in Chrome under phone emulation and prints
@@ -118,10 +118,12 @@ harness wants the deterministic bundled set.)
   on the deck would re-mint every URL on each keystroke in the builder, flashing every
   texture in the scene.
 - `Builder.tsx` — edits land on the machine immediately; there is no draft/publish split.
-  Three steps listed up front (Make → Save → Send); `ShareSteps.tsx` holds the last two:
-  Save says what is in the file before downloading it, Send writes a ready-to-paste
-  message (note + link + "attach the file") and offers the share sheet where it can
-  carry a file.
+  Two steps listed up front (Cards → Send). `SendStep.tsx` is the second: deck name,
+  note, optional passphrase, then send. The file is written in the background (debounced,
+  generation-guarded) so the share sheet has it inside the click. Safari shares message +
+  file in one go; Chromium (Chrome on Android included) only shares allowlisted file types
+  and `.quarters` is not one — `canShare` says yes, `share` then fails — so it gets
+  Download + share/copy the message instead.
 - `invite.ts` — the link that travels next to the file: `#open?note=…&file=…&cards=…`.
   Fragment, not query, so the host never sees the note; no pictures, nothing that opens
   the deck. Parsed as untrusted input (clamped, control chars stripped).

@@ -3,7 +3,7 @@ import { useDeckContext } from './DeckProvider';
 import { encodeDeck, deckFileName, isDeckFileName, DeckFileError } from './codec';
 import { orientationOf, prepareImage } from './images';
 import { MAX_CARDS, newCardId, type Deck, type DeckCard } from './types';
-import { humanSize, SaveStep, SendStep } from './ShareSteps';
+import { SendStep } from './SendStep';
 import './builder.css';
 
 /**
@@ -15,19 +15,22 @@ import './builder.css';
  * That also means there is no draft/published split to explain — the deck on the
  * machine IS the deck, and exporting just writes it to a file.
  *
- * Three steps, all listed at the top so the whole job is visible from the start:
- * make the cards, save them as a file, send the file with a link. Making is the
- * part people linger over; the other two are done once and need explaining, so
- * they get a page each (ShareSteps.tsx) instead of a button under the list.
+ * Two steps, both listed at the top so the whole job is visible from the start:
+ * the cards, then sending them (SendStep.tsx). There is deliberately no "save a
+ * file" step in between: saving first and sharing second is the order a
+ * computer needs, not the order a person thinks in, and where the share sheet
+ * can carry the file there is nothing to save at all.
  */
 
-type Step = 'make' | 'save' | 'send';
+type Step = 'make' | 'send';
 
 const STEPS: { id: Step; label: string }[] = [
-  { id: 'make', label: 'Make' },
-  { id: 'save', label: 'Save' },
+  { id: 'make', label: 'Cards' },
   { id: 'send', label: 'Send' },
 ];
+
+/** Pause after the last keystroke before re-writing the file (PBKDF2 is ~0.2 s when locked). */
+const WRITE_DEBOUNCE_MS = 350;
 
 const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml';
 
@@ -43,10 +46,13 @@ export function Builder({ onClose }: { onClose: () => void }) {
   const [passphrase, setPassphrase] = useState('');
   const [step, setStep] = useState<Step>('make');
   const [note, setNote] = useState('');
-  // The written file, kept so the share sheet can hand over the exact bytes that
-  // were downloaded — and because `navigator.share` must run inside the click,
-  // with no time to encode first.
+  // The written file. Kept ready ahead of time because `navigator.share` must
+  // run inside the click — there is no time to encode first — and so the share
+  // and the download hand over exactly the same bytes.
   const [file, setFile] = useState<File | null>(null);
+  // Bumped on every edit, so a write that finishes after the deck changed under
+  // it is dropped instead of installing a file for a deck that no longer exists.
+  const generation = useRef(0);
   const [downloaded, setDownloaded] = useState(false);
   const addRef = useRef<HTMLInputElement>(null);
   const openRef = useRef<HTMLInputElement>(null);
@@ -58,6 +64,7 @@ export function Builder({ onClose }: { onClose: () => void }) {
   // brings the "you haven't downloaded it" nudge back, which is the truth: the
   // copy in Downloads no longer matches what is on the machine.
   useEffect(() => {
+    generation.current += 1;
     setFile(null);
     setDownloaded(false);
   }, [deck, passphrase]);
@@ -174,22 +181,19 @@ export function Builder({ onClose }: { onClose: () => void }) {
   async function writeFile(): Promise<File | null> {
     if (current.cards.length === 0) return null;
     if (file) return file;
-    setWorking('Writing the deck…');
-    setError(null);
+    const started = generation.current;
     try {
       const blob = await encodeDeck(current, passphrase || undefined);
       const written = new File([blob], fileName, { type: 'application/octet-stream' });
-      setFile(written);
+      if (generation.current === started) setFile(written);
       return written;
     } catch {
       setError('The deck could not be written.');
       return null;
-    } finally {
-      setWorking(null);
     }
   }
 
-  async function saveDeckFile() {
+  async function downloadDeckFile() {
     const written = await writeFile();
     if (!written) return;
     const url = URL.createObjectURL(written);
@@ -203,11 +207,14 @@ export function Builder({ onClose }: { onClose: () => void }) {
     setDownloaded(true);
   }
 
-  // The send step offers the share sheet, which needs the file ready before the
-  // click. Written on arrival rather than on demand for that reason.
+  // Written in the background on the send step, and again a moment after each
+  // edit there (the name and passphrase live on that step), so the share button
+  // always has a current file to hand over by the time it is pressed.
   useEffect(() => {
-    if (step === 'send' && !file && working === null) void writeFile();
-  }, [step, file]);
+    if (step !== 'send' || file || current.cards.length === 0) return;
+    const timer = window.setTimeout(() => void writeFile(), WRITE_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [step, file, deck, passphrase]);
 
   const patch = (id: string, fields: Partial<DeckCard>) =>
     update({
@@ -259,42 +266,24 @@ export function Builder({ onClose }: { onClose: () => void }) {
 
       {error ? <p className="builder-error">{error}</p> : null}
 
-      {step === 'save' && hasCards ? (
-        <SaveStep
+      {step === 'send' && hasCards ? (
+        <SendStep
           deck={current}
+          onName={(name) => update({ ...current, name })}
+          file={file}
           fileName={fileName}
           size={file?.size ?? deckBytes(current)}
           passphrase={passphrase}
           onPassphrase={setPassphrase}
           downloaded={downloaded}
-          working={working !== null}
-          onSave={saveDeckFile}
-          onBack={() => setStep('make')}
-          onNext={() => setStep('send')}
-        />
-      ) : step === 'send' && hasCards ? (
-        <SendStep
-          deck={current}
-          file={file}
-          fileName={fileName}
-          locked={passphrase !== ''}
-          downloaded={downloaded}
+          onDownload={downloadDeckFile}
           note={note}
           onNote={setNote}
-          onSave={saveDeckFile}
-          onBack={() => setStep('save')}
+          onBack={() => setStep('make')}
           onDone={onClose}
         />
       ) : (
         <>
-          <input
-            className="builder-name"
-            value={current.name}
-            placeholder="Name this deck"
-            maxLength={80}
-            onChange={(event) => update({ ...current, name: event.target.value })}
-          />
-
           <p className="builder-note">
             Add pictures, then give each a title and a message for the back. They land on the
             machine as you go. Nothing is uploaded.
@@ -343,12 +332,10 @@ export function Builder({ onClose }: { onClose: () => void }) {
           <footer className="builder-foot">
             <button
               className="builder-primary builder-next"
-              onClick={() => setStep('save')}
+              onClick={() => setStep('send')}
               disabled={!hasCards || working !== null}
             >
-              {hasCards
-                ? `Next: save as a file · about ${humanSize(deckBytes(current))}`
-                : 'Add a picture to continue'}
+              {hasCards ? 'Next: name it and send →' : 'Add a picture to continue'}
             </button>
           </footer>
         </>
