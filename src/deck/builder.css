@@ -23,9 +23,11 @@
   gap: 10px;
 }
 
+/* A direct child of the panel's column now, not a row beside the close button:
+   `flex: 1` here made it grow DOWN to fill an empty panel. */
 .builder-name {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  width: 100%;
   padding: 8px 10px;
   font: inherit;
   font-size: 17px;
