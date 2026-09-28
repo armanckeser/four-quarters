@@ -13,18 +13,15 @@ import type { Deck } from './types';
  *
  * Two ways out, chosen by what the browser can actually do:
  *
- *   Share sheet with the file — Safari (iOS, iPadOS, macOS) will put any file
- *     in the sheet, so message and attachment go to the same chat in one tap.
+ *   Share sheet with the file — message and attachment go to the same chat in
+ *     one tap. The file is `.quarters.txt` / text/plain precisely so this works
+ *     in Chromium too: its Web Share only takes allowlisted file types, the
+ *     bare `.quarters` was refused on a Pixel, and `canShare()` did not warn.
  *
- *   Download + message — Chromium, including Chrome on Android, only shares
- *     files from a short allowlist (images, PDF, plain text…) and `.quarters`
- *     is not on it. Worse, `canShare()` still says yes and the real `share()`
- *     then fails, which is exactly what a Pixel showed. So on Chromium the file
- *     is downloaded instead and the MESSAGE goes through the share sheet (text
- *     always works) or the clipboard, with a line saying to attach the file.
- *
- * If a file share fails anyway, the step drops to the second path on the spot
- * and remembers it for next time.
+ *   Download + message — where there is no share sheet (most desktops), the
+ *     file is downloaded and the message copied, with a line saying to attach
+ *     the file. Also where a file share fails anyway: the step drops to this
+ *     path on the spot and remembers it for next time.
  */
 
 export function humanSize(bytes: number): string {
@@ -35,7 +32,7 @@ export function humanSize(bytes: number): string {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-const SHARE_BROKEN_KEY = 'quarters:file-share-broken';
+const SHARE_BROKEN_KEY = 'quarters:txt-share-broken';
 
 function rememberedBroken(): boolean {
   try {
@@ -54,15 +51,13 @@ function rememberBroken(): void {
 }
 
 /**
- * Whether the share sheet will really take a `.quarters` file. `canShare` is
- * necessary but not sufficient: Chromium answers yes and then refuses at
- * `share()`. `navigator.userAgentData` exists only in Chromium, which makes it
- * a cleaner tell than parsing the user-agent string.
+ * Whether the share sheet will take the deck file. `canShare` is necessary but
+ * not sufficient (it passed the old `.quarters` on a Pixel that then refused
+ * it), so a real failure is remembered and trumps it.
  */
 function canShareFile(file: File | null): boolean {
   if (!file || rememberedBroken()) return false;
   if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') return false;
-  if ('userAgentData' in navigator) return false;
   try {
     return navigator.canShare({ files: [file] });
   } catch {
@@ -165,7 +160,8 @@ export function SendStep({
   const message = messageFor(note, url, fileName, locked);
   // Decided from the browser, not from whether the file is ready yet: the
   // layout must not jump from one path to the other while it is being written.
-  const withFile = !fileShareFailed && canShareFile(file ?? new File([''], fileName));
+  const withFile =
+    !fileShareFailed && canShareFile(file ?? new File([''], fileName, { type: 'text/plain' }));
 
   useEffect(() => {
     if (!copied) return;

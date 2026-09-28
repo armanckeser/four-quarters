@@ -190,10 +190,74 @@ export async function encodeDeck(deck: Deck, passphrase?: string): Promise<Blob>
   return new Blob([header, payload], { type: 'application/octet-stream' });
 }
 
+// ---- the text wrapper -------------------------------------------------------
+
+/**
+ * What actually gets sent: the binary file above, base64'd between two armor
+ * lines, under a few lines of plain English, saved as `.quarters.txt`.
+ *
+ * Only because of browsers. Chromium's Web Share refuses any file whose
+ * extension and MIME type are not on a short allowlist (images, audio, video,
+ * PDF, plain text…), so a `.quarters` file cannot go through the share sheet
+ * on Android or desktop Chrome at all. Text is on the list and, unlike images,
+ * chat apps pass it through untouched rather than recompressing it. The price
+ * is base64's third, since the payload is already gzipped.
+ *
+ * The header is for a person who opens the file by accident: it says what the
+ * file is and where to take it. The decoder ignores everything outside the
+ * armor, so a chat app or an editor adding a line or turning \n into \r\n
+ * does no harm. Wrapping the whole binary, not the manifest, keeps the
+ * passphrase lock and the version byte exactly as they were.
+ */
+const ARMOR_BEGIN = '-----BEGIN FOUR QUARTERS DECK-----';
+const ARMOR_END = '-----END FOUR QUARTERS DECK-----';
+
+export async function encodeDeckText(
+  deck: Deck,
+  passphrase?: string,
+  openAt?: string,
+): Promise<Blob> {
+  const binary = new Uint8Array(await (await encodeDeck(deck, passphrase)).arrayBuffer());
+  const name = deck.name.trim();
+  const lines = [
+    name ? `Four Quarters deck: ${name}` : 'Four Quarters deck',
+    openAt
+      ? `To open it, go to ${openAt} and drop this file onto the page.`
+      : 'To open it, drop this file onto the Four Quarters page.',
+    'Everything below is the deck itself. Changing it will break it.',
+    '',
+    ARMOR_BEGIN,
+    // 76 columns, as MIME does, so no viewer shows it as one enormous line.
+    toBase64(binary).replace(/.{76}/g, '$&\n'),
+    ARMOR_END,
+    '',
+  ];
+  return new Blob([lines.join('\n')], { type: 'text/plain' });
+}
+
+/** The binary deck inside either form: passed through when it is already binary. */
+async function unwrap(file: Blob): Promise<Blob> {
+  const magic = textDecoder.decode(new Uint8Array(await file.slice(0, 8).arrayBuffer()));
+  if (magic === MAGIC || magic === LEGACY_MAGIC) return file;
+  // Base64 is 4/3 of the bytes; anything much past that is not one of ours.
+  if (file.size > MAX_FILE_BYTES * 1.5) throw new DeckFileError('That deck file is implausibly large.');
+
+  const text = await file.text();
+  const start = text.indexOf(ARMOR_BEGIN);
+  const end = start < 0 ? -1 : text.indexOf(ARMOR_END, start);
+  if (start < 0 || end < 0) throw new DeckFileError('That is not a Four Quarters deck file.');
+  try {
+    return new Blob([fromBase64(text.slice(start + ARMOR_BEGIN.length, end).replace(/\s+/g, ''))]);
+  } catch {
+    throw new DeckFileError('That deck file is damaged.');
+  }
+}
+
 // ---- decode -----------------------------------------------------------------
 
 /** True when the file needs a passphrase — so the UI can ask before it tries and fails. */
-export async function deckFileIsEncrypted(file: Blob): Promise<boolean> {
+export async function deckFileIsEncrypted(input: Blob): Promise<boolean> {
+  const file = await unwrap(input);
   const head = new Uint8Array(await file.slice(0, 10).arrayBuffer());
   readHeader(head);
   return (head[9] & FLAG_ENCRYPTED) !== 0;
@@ -213,7 +277,8 @@ function readHeader(head: Bytes): { version: number; flags: number } {
   return { version, flags: head[9] };
 }
 
-export async function decodeDeck(file: Blob, passphrase?: string): Promise<Deck> {
+export async function decodeDeck(input: Blob, passphrase?: string): Promise<Deck> {
+  const file = await unwrap(input);
   if (file.size > MAX_FILE_BYTES) throw new DeckFileError('That deck file is implausibly large.');
 
   const all = new Uint8Array(await file.arrayBuffer());
@@ -301,12 +366,16 @@ function cardsOf(manifest: Manifest): DeckCard[] {
   return cards;
 }
 
-/** `Sam's birthday` -> `sams-birthday.quarters`, with a fallback for a nameless deck. */
-/** A deck file by name: `.quarters`, or `.halfmoon` from before the rename. */
+/**
+ * A deck file by name: `.quarters.txt` as sent now, bare `.quarters` from before
+ * the text wrapper, `.halfmoon` from before the rename. Tolerates the ` (1)` a
+ * download folder adds to a second copy. Only ever a hint — the contents decide.
+ */
 export function isDeckFileName(name: string): boolean {
-  return /\.(quarters|halfmoon)$/i.test(name);
+  return /\.(quarters|halfmoon)( ?\(\d+\))?(\.txt)?$/i.test(name);
 }
 
+/** `Sam's birthday` -> `sams-birthday.quarters.txt`, with a fallback for a nameless deck. */
 export function deckFileName(name: string): string {
   const slug = name
     .toLowerCase()
@@ -316,5 +385,5 @@ export function deckFileName(name: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
-  return `${slug || 'four-quarters-deck'}.quarters`;
+  return `${slug || 'four-quarters-deck'}.quarters.txt`;
 }

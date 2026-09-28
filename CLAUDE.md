@@ -112,6 +112,10 @@ harness wants the deterministic bundled set.)
   exists so a six-card deck is ~100 KB: an attachment, not an upload.
 - `codec.ts` — the `.quarters` file. `QUARTERS` magic, version, flags, then a gzipped
   JSON manifest with base64 images. Everything past the header is untrusted input.
+  What is SENT is `encodeDeckText`: that binary, base64'd between BEGIN/END armor lines
+  under a plain-English header, as `name.quarters.txt` / `text/plain` — because
+  Chromium's Web Share only takes allowlisted file types and text is one. The decoder
+  takes either form (and ignores anything outside the armor).
 - `store.ts` — one record in IndexedDB. Every call is best-effort; a private window
   losing a draft is a disappointment, a blank screen is a bug.
 - `DeckProvider.tsx` — object URLs are cached **by Blob identity**, not per deck. Keying
@@ -120,10 +124,9 @@ harness wants the deterministic bundled set.)
 - `Builder.tsx` — edits land on the machine immediately; there is no draft/publish split.
   Two steps listed up front (Cards → Send). `SendStep.tsx` is the second: deck name,
   note, optional passphrase, then send. The file is written in the background (debounced,
-  generation-guarded) so the share sheet has it inside the click. Safari shares message +
-  file in one go; Chromium (Chrome on Android included) only shares allowlisted file types
-  and `.quarters` is not one — `canShare` says yes, `share` then fails — so it gets
-  Download + share/copy the message instead.
+  generation-guarded) so the share sheet has it inside the click, and message + file go
+  together. With no share sheet (most desktops), or after a failed file share (remembered
+  in localStorage), it is Download + copy the message instead.
 - `invite.ts` — the link that travels next to the file: `#open?note=…&file=…&cards=…`.
   Fragment, not query, so the host never sees the note; no pictures, nothing that opens
   the deck. Parsed as untrusted input (clamped, control chars stripped).

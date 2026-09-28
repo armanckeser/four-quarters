@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDeckContext } from './DeckProvider';
-import { encodeDeck, deckFileName, isDeckFileName, DeckFileError } from './codec';
+import { encodeDeckText, deckFileName, isDeckFileName, DeckFileError } from './codec';
 import { orientationOf, prepareImage } from './images';
 import { MAX_CARDS, newCardId, type Deck, type DeckCard } from './types';
 import { SendStep } from './SendStep';
@@ -132,15 +132,18 @@ export function Builder({ onClose }: { onClose: () => void }) {
   );
 
   // A file dropped anywhere is meant for the machine, so the whole window takes
-  // it rather than a strip of panel the user has to aim at. `.quarters` opens a
-  // deck; images join the one being built.
+  // it rather than a strip of panel the user has to aim at. Images join the deck
+  // being built; anything else is tried as a deck file (the contents decide, and
+  // a chat app may have renamed it).
   useEffect(() => {
     const over = (event: DragEvent) => event.preventDefault();
     const drop = async (event: DragEvent) => {
       event.preventDefault();
       const files = Array.from(event.dataTransfer?.files ?? []);
       if (files.length === 0) return;
-      const deckFile = files.find((file) => isDeckFileName(file.name));
+      const deckFile = files.find(
+        (file) => isDeckFileName(file.name) || !file.type.startsWith('image/'),
+      );
       if (deckFile) {
         await openDeckFile(deckFile);
         return;
@@ -183,8 +186,13 @@ export function Builder({ onClose }: { onClose: () => void }) {
     if (file) return file;
     const started = generation.current;
     try {
-      const blob = await encodeDeck(current, passphrase || undefined);
-      const written = new File([blob], fileName, { type: 'application/octet-stream' });
+      const blob = await encodeDeckText(
+        current,
+        passphrase || undefined,
+        window.location.origin + window.location.pathname,
+      );
+      // text/plain, and a .txt name: Chromium's share sheet checks both.
+      const written = new File([blob], fileName, { type: 'text/plain' });
       if (generation.current === started) setFile(written);
       return written;
     } catch {
@@ -356,7 +364,7 @@ export function Builder({ onClose }: { onClose: () => void }) {
       <input
         ref={openRef}
         type="file"
-        accept=".quarters,.halfmoon"
+        accept=".txt,text/plain,.quarters,.halfmoon"
         hidden
         onChange={(event) => {
           const picked = event.target.files?.[0];

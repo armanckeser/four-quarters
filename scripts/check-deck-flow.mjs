@@ -74,7 +74,7 @@ for (let i = 0; i < 40 && !version; i += 1) {
 }
 if (!version) { console.log('check:flow — Chrome did not come up, skipping.'); process.exit(0); }
 
-const DECK_PATH = join(SCRATCH, 'exported.quarters');
+const DECK_PATH = join(SCRATCH, 'exported.quarters.txt');
 const BAD_PATH = join(SCRATCH, 'not-a-deck.quarters');
 
 const tab = await (await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })).json();
@@ -234,10 +234,10 @@ await evalJs(`
 await new Promise((r) => setTimeout(r, 300));
 ok('name persisted from the send step', (await readStored()).includes('Test deck'), await readStored());
 const sendCard = (await evalJs(`document.querySelector('.builder-send').textContent`)).value;
-ok('names the file it will send', sendCard.includes('test-deck.quarters'), sendCard.slice(0, 120));
-// Headless Chrome is Chromium: it must get the download + share-the-message
-// path, never a "Share…" button that would fail with a .quarters attached.
-ok('chromium gets download, not file share', /Download test-deck\.quarters/.test(sendCard) && !/^Share…/.test(sendCard));
+ok('names the file it will send', sendCard.includes('test-deck.quarters.txt'), sendCard.slice(0, 120));
+// Headless desktop Chrome on Linux has no share sheet at all, so it must get
+// the download + copy path rather than a Share button that cannot work.
+ok('no share sheet: offers the download', /Download test-deck\.quarters\.txt/.test(sendCard) && !/^Share…/.test(sendCard));
 await until('the file to be written', `!document.querySelector('.builder-send .builder-primary').disabled`, 10000);
 
 console.log('\nexport writes a real file');
@@ -252,10 +252,9 @@ const file = JSON.parse((await evalJs(`
         const all = new Uint8Array(await b.arrayBuffer());
         resolve(JSON.stringify({
           name: name,
+          type: b.type,
           size: b.size,
-          magic: String.fromCharCode.apply(null, Array.from(all.subarray(0, 8))),
-          version: all[8],
-          flags: all[9],
+          text: await b.text(),
           bytes: Array.from(all).join(',')
         }));
       });
@@ -264,9 +263,12 @@ const file = JSON.parse((await evalJs(`
     document.querySelector('.builder-send .builder-primary').click();
   })
 `)).value);
-ok('file is a Four Quarters deck', file.magic === 'QUARTERS', `magic=${file.magic} v=${file.version} flags=${file.flags}`);
-ok('named from the deck title', file.name === 'test-deck.quarters', file.name);
-ok('gzipped, not encrypted', file.flags === 2, 'flags=' + file.flags);
+// Plain text with a .txt name: the two things Chromium's share sheet checks.
+ok('named from the deck title', file.name === 'test-deck.quarters.txt', file.name);
+ok('shared as text/plain', file.type === 'text/plain', file.type);
+ok('explains itself', file.text.startsWith('Four Quarters deck: Test deck\n'), file.text.split('\n')[0]);
+ok('says where to open it', file.text.includes('go to http://localhost:4178/ and drop this file'));
+ok('carries the armored deck', file.text.includes('-----BEGIN FOUR QUARTERS DECK-----') && file.text.includes('-----END FOUR QUARTERS DECK-----'));
 ok('plausible size', file.size > 1000 && file.size < 200000, Math.round(file.size / 1024) + ' KB');
 
 await until('the download to be confirmed', `/✓ Downloaded/.test(document.querySelector('.builder-send').textContent)`, 5000);
@@ -276,7 +278,7 @@ console.log('\nthe message carries the link');
 const preview = (await evalJs(`document.querySelector('.builder-preview').value`)).value;
 const link = (preview.match(/https?:\/\/\S+/) ?? [''])[0];
 ok('message starts with the note', preview.startsWith('Happy birthday & more #1'), preview.split('\n')[0]);
-ok('message names the attachment', preview.includes('test-deck.quarters'));
+ok('message names the attachment', preview.includes('test-deck.quarters.txt'));
 ok('message carries an invite link', link.includes('#open?'), link);
 ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 
@@ -285,7 +287,7 @@ ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 // seen this deck, and it comes back whole.
 console.log('\nopening that file on a clean machine');
 writeFileSync(DECK_PATH, Buffer.from(file.bytes.split(',').map(Number)));
-console.log(`  wrote exported.quarters (${Math.round(file.size / 1024)} KB)`);
+console.log(`  wrote exported.quarters.txt (${Math.round(file.size / 1024)} KB)`);
 
 await wipe();
 await send('Page.navigate', { url: 'about:blank' });
@@ -298,7 +300,7 @@ const invited = JSON.parse((await evalJs(`JSON.stringify({
 })`)).value);
 ok('link opens with the note', invited.note === 'Happy birthday & more #1', invited.note ?? 'none');
 ok('link opens with the deck name', invited.heading === 'Test deck', invited.heading);
-ok('drop zone names the file', (invited.drop ?? '').includes('test-deck.quarters'), invited.drop ?? '');
+ok('drop zone names the file', (invited.drop ?? '').includes('test-deck.quarters.txt'), invited.drop ?? '');
 
 const receiveInput = await send('Runtime.evaluate', { expression: `document.querySelector('.receive input[type=file]')` });
 await send('DOM.setFileInputFiles', { objectId: receiveInput.result.objectId, files: [DECK_PATH] });
