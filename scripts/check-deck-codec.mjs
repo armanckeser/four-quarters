@@ -30,7 +30,7 @@ try {
     { stdio: 'inherit', shell: process.platform === 'win32' },
   );
 
-  const { encodeDeck, decodeDeck, deckFileIsEncrypted, deckFileName, isDeckFileName, DeckFileError } =
+  const { encodeDeck, encodeDeckText, decodeDeck, deckFileIsEncrypted, deckFileName, isDeckFileName, DeckFileError } =
     await import(pathToFileURL(bundle).href);
 
   // The share link travels with the file and is just as much untrusted input.
@@ -183,15 +183,60 @@ try {
     ok('message clamped', back.cards.every((c) => c.message.length <= 2000));
   }
 
+  console.log('\ntext wrapper (.quarters.txt)');
+  {
+    const img = (n) => new Blob([new Uint8Array(3000).map((_, i) => (i * n) % 251)], { type: 'image/webp' });
+    const deck = { name: "Sam's birthday", cards: [
+      { id: 'a', title: 'One', message: 'Back of one', image: img(7) },
+      { id: 'b', title: 'Two', message: '', orientation: 'landscape', image: img(13) },
+    ] };
+    const txt = await encodeDeckText(deck, undefined, 'https://example.com/four-quarters/');
+    const text = await txt.text();
+    ok('is text/plain', txt.type === 'text/plain', txt.type);
+    ok('explains itself on line one', text.startsWith("Four Quarters deck: Sam's birthday\n"), text.split('\n')[0]);
+    ok('says where to open it', text.includes('go to https://example.com/four-quarters/ and drop this file'));
+    ok('lines wrapped', text.split('\n').every((l) => l.length <= 120));
+    const back = await decodeDeck(txt);
+    ok('round-trips', back.name === deck.name && back.cards.length === 2 && back.cards[1].orientation === 'landscape');
+    ok('image bytes survive', (await back.cards[0].image.arrayBuffer()).byteLength === 3000);
+    ok('unlocked text is not encrypted', (await deckFileIsEncrypted(txt)) === false);
+
+    const mangled = new Blob(['Forwarded message:\r\n\r\n' + text.replace(/\n/g, '\r\n') + '\r\nSent from my phone']);
+    ok('survives CRLF and chatter around it', (await decodeDeck(mangled)).cards.length === 2);
+
+    const locked = await encodeDeckText(deck, 'hunter2');
+    ok('locked text reports encrypted', (await deckFileIsEncrypted(locked)) === true);
+    ok('locked text opens with the passphrase', (await decodeDeck(locked, 'hunter2')).cards.length === 2);
+    let wrong = null;
+    try { await decodeDeck(locked, 'nope'); } catch (e) { wrong = e; }
+    ok('wrong passphrase refused', wrong instanceof DeckFileError, wrong?.message);
+
+    const binary = await encodeDeck(deck);
+    ok('bare binary .quarters still opens', (await decodeDeck(binary)).cards.length === 2);
+
+    for (const [label, blob] of [
+      ['plain text, no armor', new Blob(['just a note about quarters'])],
+      ['armor with no end', new Blob(['-----BEGIN FOUR QUARTERS DECK-----\nAAAA'])],
+      ['armor around garbage', new Blob(['-----BEGIN FOUR QUARTERS DECK-----\n!!!!\n-----END FOUR QUARTERS DECK-----'])],
+      ['armor around a non-deck', new Blob(['-----BEGIN FOUR QUARTERS DECK-----\n' + Buffer.from('hello world, not a deck').toString('base64') + '\n-----END FOUR QUARTERS DECK-----'])],
+    ]) {
+      let threw = null;
+      try { await decodeDeck(blob); } catch (e) { threw = e; }
+      ok(`${label} -> DeckFileError`, threw instanceof DeckFileError, threw?.message);
+    }
+  }
+
   console.log('\nfile naming');
-  ok('slugified', deckFileName("Sam's birthday!!") === 'sams-birthday.quarters', deckFileName("Sam's birthday!!"));
-  ok('nameless falls back', deckFileName('   ') === 'four-quarters-deck.quarters');
-  ok('emoji-only falls back', deckFileName('🎠🎠') === 'four-quarters-deck.quarters');
+  ok('slugified', deckFileName("Sam's birthday!!") === 'sams-birthday.quarters.txt', deckFileName("Sam's birthday!!"));
+  ok('nameless falls back', deckFileName('   ') === 'four-quarters-deck.quarters.txt');
+  ok('emoji-only falls back', deckFileName('🎠🎠') === 'four-quarters-deck.quarters.txt');
+  ok('recognises every form', ['a.quarters.txt', 'a.quarters', 'a.halfmoon', 'a.quarters (1).txt', 'A.QUARTERS.TXT'].every(isDeckFileName));
+  ok('rejects others', !['a.txt', 'a.png', 'quarters', 'a.quarters.exe'].some(isDeckFileName));
 
   console.log('\nshare link');
   {
     const base = 'https://example.com/four-quarters/';
-    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: 'sams-birthday.quarters', cards: 6, locked: true };
+    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: 'sams-birthday.quarters.txt', cards: 6, locked: true };
     const url = inviteUrl(base + '#stale', sent);
     ok('link keeps the page path, drops old fragment', url.startsWith(base + '#open?'), url);
     ok('link carries no query string', !new URL(url).search);

@@ -74,7 +74,7 @@ for (let i = 0; i < 40 && !version; i += 1) {
 }
 if (!version) { console.log('check:flow — Chrome did not come up, skipping.'); process.exit(0); }
 
-const DECK_PATH = join(SCRATCH, 'exported.quarters');
+const DECK_PATH = join(SCRATCH, 'exported.quarters.txt');
 const BAD_PATH = join(SCRATCH, 'not-a-deck.quarters');
 
 const tab = await (await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })).json();
@@ -169,8 +169,7 @@ const addError = (await evalJs(`document.querySelector('.builder-error') ? docum
 ok('no error while adding', addError === null, addError ?? '');
 ok('three card rows', (await evalJs(`document.querySelectorAll('.builder-card').length`)).value === 3);
 ok('empty state gone', (await evalJs(`!document.querySelector('.builder-empty')`)).value === true);
-const saveLabel = (await evalJs(`document.querySelector('.builder-next').textContent`)).value;
-ok('next button shows a size', /about \d+ KB/.test(saveLabel), saveLabel);
+ok('next button enabled', (await evalJs(`!document.querySelector('.builder-next').disabled`)).value === true);
 
 const parsed = JSON.parse((await evalJs(`
   (async () => {
@@ -193,7 +192,6 @@ const typed = (await evalJs(`
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, v);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  setValue(document.querySelector('.builder-name'), 'Test deck');
   setValue(document.querySelector('.builder-fields input'), 'A card title');
   'typed'
 `)).value;
@@ -201,8 +199,7 @@ ok('typing works', typed === 'typed');
 await new Promise((r) => setTimeout(r, 900));
 ok('rows survive the keystroke', (await evalJs(`document.querySelectorAll('.builder-card').length`)).value === 3);
 
-console.log('\npersisted to IndexedDB');
-const stored = (await evalJs(`
+const readStored = async () => (await evalJs(`
   new Promise((resolve) => {
     const req = indexedDB.open('halfmoon', 1);
     req.onsuccess = () => {
@@ -216,20 +213,32 @@ const stored = (await evalJs(`
     req.onerror = () => resolve('null');
   })
 `)).value;
-ok('deck saved with its name', stored.includes('"cards":3') && stored.includes('Test deck'), stored);
 
-console.log('\nthe save step explains the file');
+console.log('\npersisted to IndexedDB');
+ok('deck saved', (await readStored()).includes('"cards":3'), await readStored());
+
+console.log('\nthe send step: name, note, then send');
 await evalJs(`document.querySelector('.builder-next').click()`);
 await new Promise((r) => setTimeout(r, 300));
-const saveStep = JSON.parse((await evalJs(`JSON.stringify({
-  heading: document.querySelector('#save-heading') && document.querySelector('#save-heading').textContent,
-  file: document.querySelector('.builder-file-meta strong') && document.querySelector('.builder-file-meta strong').textContent,
-  inside: document.querySelectorAll('.builder-explain li').length,
-  current: document.querySelector('[aria-current=step]') && document.querySelector('[aria-current=step]').textContent
-})`)).value);
-ok('on the save step', saveStep.current === '2Save', saveStep.current);
-ok('names the file before downloading', saveStep.file === 'test-deck.quarters', saveStep.file);
-ok('lists what is inside', saveStep.inside >= 2, String(saveStep.inside));
+ok('on the send step', (await evalJs(`document.querySelector('[aria-current=step]').textContent`)).value === '2Send');
+await evalJs(`
+  (() => {
+    const set = (el, v) => {
+      Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set(document.querySelector('.builder-field input'), 'Test deck');
+    set(document.querySelector('.builder-field textarea'), 'Happy birthday & more #1');
+  })()
+`);
+await new Promise((r) => setTimeout(r, 300));
+ok('name persisted from the send step', (await readStored()).includes('Test deck'), await readStored());
+const sendCard = (await evalJs(`document.querySelector('.builder-send').textContent`)).value;
+ok('names the file it will send', sendCard.includes('test-deck.quarters.txt'), sendCard.slice(0, 120));
+// Headless desktop Chrome on Linux has no share sheet at all, so it must get
+// the download + copy path rather than a Share button that cannot work.
+ok('no share sheet: offers the download', /Download test-deck\.quarters\.txt/.test(sendCard) && !/^Share…/.test(sendCard));
+await until('the file to be written', `!document.querySelector('.builder-send .builder-primary').disabled`, 10000);
 
 console.log('\nexport writes a real file');
 // The download never lands in headless, so intercept the anchor the button
@@ -243,41 +252,33 @@ const file = JSON.parse((await evalJs(`
         const all = new Uint8Array(await b.arrayBuffer());
         resolve(JSON.stringify({
           name: name,
+          type: b.type,
           size: b.size,
-          magic: String.fromCharCode.apply(null, Array.from(all.subarray(0, 8))),
-          version: all[8],
-          flags: all[9],
+          text: await b.text(),
           bytes: Array.from(all).join(',')
         }));
       });
       HTMLAnchorElement.prototype.click = realClick;
     };
-    document.querySelector('.builder-step .builder-primary').click();
+    document.querySelector('.builder-send .builder-primary').click();
   })
 `)).value);
-ok('file is a Four Quarters deck', file.magic === 'QUARTERS', `magic=${file.magic} v=${file.version} flags=${file.flags}`);
-ok('named from the deck title', file.name === 'test-deck.quarters', file.name);
-ok('gzipped, not encrypted', file.flags === 2, 'flags=' + file.flags);
+// Plain text with a .txt name: the two things Chromium's share sheet checks.
+ok('named from the deck title', file.name === 'test-deck.quarters.txt', file.name);
+ok('shared as text/plain', file.type === 'text/plain', file.type);
+ok('explains itself', file.text.startsWith('Four Quarters deck: Test deck\n'), file.text.split('\n')[0]);
+ok('says where to open it', file.text.includes('go to http://localhost:4178/ and drop this file'));
+ok('carries the armored deck', file.text.includes('-----BEGIN FOUR QUARTERS DECK-----') && file.text.includes('-----END FOUR QUARTERS DECK-----'));
 ok('plausible size', file.size > 1000 && file.size < 200000, Math.round(file.size / 1024) + ' KB');
 
-await until('the saved confirmation', `!!document.querySelector('.builder-done')`, 5000);
-ok('confirms the download', (await evalJs(`!!document.querySelector('.builder-done')`)).value === true);
+await until('the download to be confirmed', `/✓ Downloaded/.test(document.querySelector('.builder-send').textContent)`, 5000);
+ok('confirms the download', (await evalJs(`/✓ Downloaded/.test(document.querySelector('.builder-send').textContent)`)).value === true);
 
-console.log('\nthe send step writes the link');
-await evalJs(`[...document.querySelectorAll('.builder-step .builder-primary')].find(b => /send/i.test(b.textContent)).click()`);
-await new Promise((r) => setTimeout(r, 300));
-await evalJs(`
-  (() => {
-    const el = document.querySelector('#send-note');
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, 'Happy birthday & more #1');
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  })()
-`);
-await new Promise((r) => setTimeout(r, 200));
+console.log('\nthe message carries the link');
 const preview = (await evalJs(`document.querySelector('.builder-preview').value`)).value;
 const link = (preview.match(/https?:\/\/\S+/) ?? [''])[0];
 ok('message starts with the note', preview.startsWith('Happy birthday & more #1'), preview.split('\n')[0]);
-ok('message names the attachment', preview.includes('test-deck.quarters'));
+ok('message names the attachment', preview.includes('test-deck.quarters.txt'));
 ok('message carries an invite link', link.includes('#open?'), link);
 ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 
@@ -286,7 +287,7 @@ ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 // seen this deck, and it comes back whole.
 console.log('\nopening that file on a clean machine');
 writeFileSync(DECK_PATH, Buffer.from(file.bytes.split(',').map(Number)));
-console.log(`  wrote exported.quarters (${Math.round(file.size / 1024)} KB)`);
+console.log(`  wrote exported.quarters.txt (${Math.round(file.size / 1024)} KB)`);
 
 await wipe();
 await send('Page.navigate', { url: 'about:blank' });
@@ -299,7 +300,7 @@ const invited = JSON.parse((await evalJs(`JSON.stringify({
 })`)).value);
 ok('link opens with the note', invited.note === 'Happy birthday & more #1', invited.note ?? 'none');
 ok('link opens with the deck name', invited.heading === 'Test deck', invited.heading);
-ok('drop zone names the file', (invited.drop ?? '').includes('test-deck.quarters'), invited.drop ?? '');
+ok('drop zone names the file', (invited.drop ?? '').includes('test-deck.quarters.txt'), invited.drop ?? '');
 
 const receiveInput = await send('Runtime.evaluate', { expression: `document.querySelector('.receive input[type=file]')` });
 await send('DOM.setFileInputFiles', { objectId: receiveInput.result.objectId, files: [DECK_PATH] });
@@ -318,13 +319,12 @@ await until('thumbnails to paint', `document.querySelectorAll('.builder-thumb im
 
 const loaded = JSON.parse((await evalJs(`JSON.stringify({
   rows: document.querySelectorAll('.builder-card').length,
-  name: document.querySelector('.builder-name').value,
   firstTitle: document.querySelector('.builder-fields input').value,
   error: document.querySelector('.builder-error') ? document.querySelector('.builder-error').textContent : null,
   thumbs: document.querySelectorAll('.builder-thumb img').length
 })`)).value);
 ok('three cards came back', loaded.rows === 3, `got ${loaded.rows}`);
-ok('deck name came back', loaded.name === 'Test deck', loaded.name);
+ok('deck name came back', (await readStored()).includes('Test deck'), await readStored());
 ok('card title came back', loaded.firstTitle === 'A card title', loaded.firstTitle);
 ok('thumbnails rendered', loaded.thumbs === 3, String(loaded.thumbs));
 ok('no error shown', loaded.error === null, loaded.error ?? '');

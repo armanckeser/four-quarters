@@ -9,8 +9,8 @@ import type { Invite } from './invite';
  * They arrive knowing nothing — not what this page is, not what the attachment
  * is for — so this reads top to bottom as the answer: who it's from (the note),
  * what to do (drop the file), and where that file probably is. The drop zone
- * names the exact file, because "a .quarters file" means nothing to them but
- * "sams-birthday.quarters" is something they can find in a chat.
+ * names the exact file, because "a deck file" means nothing to them but
+ * "sams-birthday.quarters.txt" is something they can find in a chat.
  *
  * The machine is already running behind this; the panel is small so the thing
  * they are about to load is visible while they load it.
@@ -48,7 +48,7 @@ export function Receive({ invite, onClose }: { invite: Invite; onClose: () => vo
       // a wrong file with the wrong name is most likely the wrong attachment.
       setError(
         !isDeckFileName(file.name)
-          ? `${file.name} isn’t the deck. Look for the file ending in .quarters.`
+          ? `${file.name} isn’t the deck. Look for the one ending in .quarters.txt.`
           : failure instanceof DeckFileError
             ? failure.message
             : 'That file could not be opened.',
@@ -76,7 +76,7 @@ export function Receive({ invite, onClose }: { invite: Invite; onClose: () => vo
     };
   });
 
-  const fileLabel = invite.file || 'the .quarters file';
+  const fileLabel = invite.file || 'the .quarters.txt file';
   const count = invite.cards ? `${invite.cards} ${invite.cards === 1 ? 'print' : 'prints'}` : 'prints';
 
   if (loaded !== null) {
@@ -166,8 +166,8 @@ export function Receive({ invite, onClose }: { invite: Invite; onClose: () => vo
       <input
         ref={pickRef}
         type="file"
-        // `.quarters` alone makes iOS grey out every file (it has no type for the
-        // extension), so the picker is left open and the name is checked instead.
+        // No `accept`: a chat app may have renamed the file, and iOS greys out
+        // anything that does not match. The contents are checked instead.
         hidden
         onChange={(event) => {
           const picked = event.target.files?.[0];

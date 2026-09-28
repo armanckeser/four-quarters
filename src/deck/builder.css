@@ -23,26 +23,6 @@
   gap: 10px;
 }
 
-/* A direct child of the panel's column now, not a row beside the close button:
-   `flex: 1` here made it grow DOWN to fill an empty panel. */
-.builder-name {
-  flex: none;
-  width: 100%;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 17px;
-  font-weight: 600;
-  color: #17202a;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid #ded9cb;
-}
-
-.builder-name:focus {
-  outline: none;
-  border-bottom-color: #c2452f;
-}
-
 .builder-close {
   flex: none;
   width: 32px;
@@ -341,60 +321,32 @@
   color: #3d4550;
 }
 
-.builder-file {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: #fff;
-  border: 1px solid #e7e2d6;
-  border-radius: 10px;
-}
-
-/* A kraft packet, like the card that comes out of the machine. */
-.builder-file-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 38px;
-  height: 46px;
-  font-size: 18px;
-  font-weight: 700;
-  color: #6e5233;
-  background: #d8bf98;
-  border-radius: 4px 12px 4px 4px;
-}
-
-.builder-file-meta {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13.5px;
-}
-
-.builder-file-meta strong {
-  overflow-wrap: anywhere;
-}
-
-.builder-file-meta span {
-  font-size: 12.5px;
-  color: #6b6559;
-}
-
 .builder-explain {
-  padding: 12px 14px;
+  padding: 10px 14px;
   background: #f4f1e8;
   border-radius: 10px;
 }
 
-.builder-explain h3 {
-  margin: 0 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #6b6559;
+.builder-explain summary {
+  font-size: 13px;
+  color: #3d4550;
+  cursor: pointer;
+}
+
+.builder-explain[open] summary {
+  margin-bottom: 8px;
+}
+
+.builder-explain textarea.builder-preview {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: #3d4550;
+  background: #fbfaf5;
+  border: 1px solid #e7e2d6;
+  border-radius: 6px;
+  resize: vertical;
 }
 
 .builder-explain ul {
@@ -498,12 +450,6 @@
   resize: vertical;
 }
 
-.builder-howto textarea.builder-preview {
-  font-size: 12.5px;
-  color: #3d4550;
-  background: #f4f1e8;
-}
-
 .builder-count {
   font-size: 11.5px;
   color: #8a8474;
@@ -527,6 +473,71 @@
 
 .builder-next {
   width: 100%;
+}
+
+/* Labelled fields on the send step: name, note. */
+.builder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.builder-field span {
+  font-size: 14px;
+  font-weight: 600;
+  color: #17202a;
+}
+
+.builder-field input,
+.builder-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: #17202a;
+  background: #fff;
+  border: 1px solid #ded9cb;
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.builder-field input:focus,
+.builder-field textarea:focus {
+  outline: 2px solid #c2452f;
+  outline-offset: -1px;
+}
+
+.builder-field small,
+.builder .builder-hint {
+  font-size: 12px;
+  color: #8a8474;
+}
+
+/* The one place the step is going: the send actions, set apart as a card. */
+.builder-send {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #e7e2d6;
+  border-radius: 12px;
+}
+
+.builder-send .builder-primary {
+  width: 100%;
+}
+
+.builder-send .builder-howto {
+  gap: 10px;
+}
+
+.builder-send .builder-howto > li::before {
+  top: 9px;
+}
+
+.builder-quiet-row {
+  gap: 4px 16px;
 }
 
 /* ---- the recipient's panel --------------------------------------------------- */
