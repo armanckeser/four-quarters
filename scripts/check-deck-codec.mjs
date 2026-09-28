@@ -33,6 +33,16 @@ try {
   const { encodeDeck, decodeDeck, deckFileIsEncrypted, deckFileName, isDeckFileName, DeckFileError } =
     await import(pathToFileURL(bundle).href);
 
+  // The share link travels with the file and is just as much untrusted input.
+  const inviteBundle = join(out, 'invite.mjs');
+  execFileSync(
+    'npx',
+    ['esbuild', 'src/deck/invite.ts', '--bundle', '--format=esm', '--platform=neutral',
+     `--outfile=${inviteBundle}`, '--log-level=warning'],
+    { stdio: 'inherit', shell: process.platform === 'win32' },
+  );
+  const { inviteUrl, readInvite, NOTE_MAX } = await import(pathToFileURL(inviteBundle).href);
+
   let pass = 0;
   let fail = 0;
   const ok = (name, cond, extra = '') => {
@@ -177,6 +187,31 @@ try {
   ok('slugified', deckFileName("Sam's birthday!!") === 'sams-birthday.quarters', deckFileName("Sam's birthday!!"));
   ok('nameless falls back', deckFileName('   ') === 'four-quarters-deck.quarters');
   ok('emoji-only falls back', deckFileName('🎠🎠') === 'four-quarters-deck.quarters');
+
+  console.log('\nshare link');
+  {
+    const base = 'https://example.com/four-quarters/';
+    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: 'sams-birthday.quarters', cards: 6, locked: true };
+    const url = inviteUrl(base + '#stale', sent);
+    ok('link keeps the page path, drops old fragment', url.startsWith(base + '#open?'), url);
+    ok('link carries no query string', !new URL(url).search);
+    const back = readInvite(new URL(url).hash);
+    ok('invite round-trips', JSON.stringify(back) === JSON.stringify(sent), JSON.stringify(back));
+    ok('ordinary visit is not an invite', readInvite('') === null && readInvite('#about') === null);
+    const unlocked = readInvite(new URL(inviteUrl(base, { ...sent, locked: false, note: '', name: '' })).hash);
+    ok('empty note and unlocked survive', unlocked.note === '' && unlocked.name === '' && unlocked.locked === false);
+
+    const hostile = readInvite(
+      '#open?note=' + encodeURIComponent('x'.repeat(5000) + '\u0000\u001b') +
+      '&file=' + encodeURIComponent('evil.exe') + '&cards=9999&locked=yes&name=' + encodeURIComponent('\u0007bell'),
+    );
+    ok('note clamped', hostile.note.length === NOTE_MAX, String(hostile.note.length));
+    ok('control characters stripped', !/[\u0000-\u0008\u001b]/.test(hostile.note) && hostile.name === 'bell');
+    ok('non-deck filename dropped', hostile.file === '');
+    ok('implausible card count dropped', hostile.cards === 0);
+    ok('only locked=1 means locked', hostile.locked === false);
+    ok('garbage does not throw', readInvite('#open?%E0%A4%A') !== undefined);
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
