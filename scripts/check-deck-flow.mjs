@@ -233,12 +233,48 @@ await evalJs(`
 `);
 await new Promise((r) => setTimeout(r, 300));
 ok('name persisted from the send step', (await readStored()).includes('Test deck'), await readStored());
+
+// ---- sending a link (only when the build points at a deck locker) -----------
+// Build with VITE_QUARTERS_CLOUD=http://localhost:8787 and run `npm run dev` in
+// worker/ to cover this; without it the link option is hidden and this skips.
+let cloudLink = null;
+const hasCloud = (await evalJs(`!!document.querySelector('.builder-modes')`)).value;
+if (hasCloud) {
+  console.log('\nsending a link');
+  // No share sheet in headless Linux Chrome, so the link goes to the clipboard,
+  // which headless only allows with the permission granted up front.
+  await send('Browser.grantPermissions', {
+    origin: new URL(ORIGIN).origin,
+    permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+  });
+  ok('link is the default', (await evalJs(`document.querySelectorAll('.builder-modes input')[0].checked`)).value === true);
+  await evalJs(`document.querySelector('.builder-send .builder-primary').click()`);
+  await until('the upload', `/[?&]d=/.test(document.querySelector('.builder-preview').value) || !!document.querySelector('.builder-send .builder-error')`, 15000);
+  const cloudPreview = (await evalJs(`document.querySelector('.builder-preview').value`)).value;
+  cloudLink = (cloudPreview.match(/https?:\/\/\S+/) ?? [''])[0];
+  const uploadError = (await evalJs(`document.querySelector('.builder-send .builder-error')?.textContent ?? null`)).value;
+  ok('uploaded without error', uploadError === null, uploadError ?? '');
+  // Headless refuses the clipboard outside a real click, exactly like Safari
+  // after a slow upload: the button must turn into a second, instant tap.
+  const afterUpload = (await evalJs(`document.querySelector('.builder-send .builder-primary').textContent`)).value;
+  ok('a refused copy asks for one more tap, not an error', /Link ready|Copied|✓/.test(afterUpload), afterUpload);
+  ok('link carries the deck id and key', /[?&]d=[\w-]{22}/.test(cloudLink) && /[?&]k=[\w-]{43}/.test(cloudLink), cloudLink);
+  ok('link carries no file name', !/[?&]file=/.test(cloudLink));
+  ok('link is short enough for any chat app', cloudLink.length < 400, `${cloudLink.length} chars`);
+  ok('offers a backup copy', /Save a backup copy/.test((await evalJs(`document.querySelector('.builder-send').textContent`)).value));
+  // Switch to the file path for the rest of the sender's checks.
+  await evalJs(`document.querySelectorAll('.builder-modes input')[1].click()`);
+  await new Promise((r) => setTimeout(r, 300));
+}
+
+console.log('\nsending the file');
 const sendCard = (await evalJs(`document.querySelector('.builder-send').textContent`)).value;
 ok('names the file it will send', sendCard.includes('test-deck.quarters.txt'), sendCard.slice(0, 120));
 // Headless desktop Chrome on Linux has no share sheet at all, so it must get
 // the download + copy path rather than a Share button that cannot work.
-ok('no share sheet: offers the download', /Download test-deck\.quarters\.txt/.test(sendCard) && !/^Share…/.test(sendCard));
-await until('the file to be written', `!document.querySelector('.builder-send .builder-primary').disabled`, 10000);
+ok('no share sheet: offers the download', /Download test-deck\.quarters\.txt/.test(sendCard) && !/Share the file/.test(sendCard));
+ok('two steps: message, then file', (await evalJs(`document.querySelectorAll('.builder-send .builder-howto > li').length`)).value === 2);
+await until('the file to be written', `!document.querySelectorAll('.builder-send .builder-primary')[1].disabled`, 10000);
 
 console.log('\nexport writes a real file');
 // The download never lands in headless, so intercept the anchor the button
@@ -260,7 +296,7 @@ const file = JSON.parse((await evalJs(`
       });
       HTMLAnchorElement.prototype.click = realClick;
     };
-    document.querySelector('.builder-send .builder-primary').click();
+    document.querySelectorAll('.builder-send .builder-primary')[1].click();
   })
 `)).value);
 // Plain text with a .txt name: the two things Chromium's share sheet checks.
@@ -271,8 +307,8 @@ ok('says where to open it', file.text.includes('go to http://localhost:4178/ and
 ok('carries the armored deck', file.text.includes('-----BEGIN FOUR QUARTERS DECK-----') && file.text.includes('-----END FOUR QUARTERS DECK-----'));
 ok('plausible size', file.size > 1000 && file.size < 200000, Math.round(file.size / 1024) + ' KB');
 
-await until('the download to be confirmed', `/✓ Downloaded/.test(document.querySelector('.builder-send').textContent)`, 5000);
-ok('confirms the download', (await evalJs(`/✓ Downloaded/.test(document.querySelector('.builder-send').textContent)`)).value === true);
+await until('the download to be confirmed', `/✓ Download/.test(document.querySelector('.builder-send').textContent)`, 5000);
+ok('confirms the download', (await evalJs(`/✓ Download/.test(document.querySelector('.builder-send').textContent)`)).value === true);
 
 console.log('\nthe message carries the link');
 const preview = (await evalJs(`document.querySelector('.builder-preview').value`)).value;
@@ -339,6 +375,43 @@ await until('an error to appear', `!!document.querySelector('.builder-error')`, 
 const badMsg = (await evalJs(`document.querySelector('.builder-error') ? document.querySelector('.builder-error').textContent : null`)).value;
 ok('refused with a sentence', badMsg === 'That is not a Four Quarters deck file.', badMsg ?? 'no error');
 ok('the good deck survived the bad file', (await evalJs(`document.querySelectorAll('.builder-card').length`)).value === 3);
+
+if (cloudLink) {
+  console.log('\nopening the link on a clean machine');
+  await wipe();
+  await send('Page.navigate', { url: 'about:blank' });
+  await send('Page.navigate', { url: cloudLink });
+  await until('the deck to load by itself', `/in the machine/.test(document.querySelector('#receive-heading')?.textContent ?? '')`, 20000);
+  ok('loaded with no file and no tap', (await evalJs(`/in the machine/.test(document.querySelector('#receive-heading')?.textContent ?? '')`)).value === true);
+  ok('the note is still shown', (await evalJs(`document.querySelector('.receive-note')?.textContent ?? null`)).value === 'Happy birthday & more #1');
+  ok('the right deck arrived', (await readStored()).includes('"cards":3') && (await readStored()).includes('Test deck'), await readStored());
+
+  console.log('\na link on a device that already has a deck');
+  // Loading would replace it, so the panel must ask rather than load by itself.
+  await evalJs(`document.querySelector('.receive-primary').click()`);
+  await send('Page.navigate', { url: 'about:blank' });
+  await send('Page.navigate', { url: cloudLink });
+  await until('the invite panel', `!!document.querySelector('.receive')`);
+  await new Promise((r) => setTimeout(r, 2500));
+  const asks = JSON.parse((await evalJs(`JSON.stringify({
+    button: document.querySelector('.receive-primary')?.textContent ?? null,
+    heading: document.querySelector('#receive-heading')?.textContent ?? null,
+    warns: /replaces the deck/.test(document.querySelector('.receive')?.textContent ?? '')
+  })`)).value);
+  ok('asks before replacing', asks.button === 'Load their deck' && !/in the machine/.test(asks.heading ?? ''), JSON.stringify(asks));
+  ok('says it will replace their deck', asks.warns === true);
+
+  console.log('\na link with a wrong key');
+  const tampered = cloudLink.replace(/k=[\w-]{43}/, 'k=' + 'A'.repeat(43));
+  await wipe();
+  await send('Page.navigate', { url: 'about:blank' });
+  await send('Page.navigate', { url: tampered });
+  await until('an error', `!!document.querySelector('.receive-error')`, 15000);
+  const tamperedMsg = (await evalJs(`document.querySelector('.receive-error')?.textContent ?? null`)).value;
+  ok('refused with a sentence', /incomplete/.test(tamperedMsg ?? ''), tamperedMsg ?? 'none');
+  ok('falls back to the drop zone', (await evalJs(`!!document.querySelector('.receive-drop')`)).value === true);
+}
+
 
 console.log('\nuncaught exceptions:', problems.length ? '\n  ' + problems.join('\n  ') : ' none');
 console.log(`\n${pass} passed, ${fail} failed`);

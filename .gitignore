@@ -27,3 +27,6 @@ sfx-work/
 
 # A personal catalogue override, if you keep your own titles and messages out of git.
 src/data/prints.local.ts
+
+# Wrangler local state (worker/ dev server, simulated R2)
+.wrangler/

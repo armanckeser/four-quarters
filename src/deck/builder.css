@@ -735,3 +735,70 @@
     max-height: calc(100vh - 80px);
   }
 }
+
+/* ---- how to send: link or file ---------------------------------------------- */
+
+.builder-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.builder-modes legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #17202a;
+}
+
+.builder-modes label {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  background: #fff;
+  border: 1px solid #e7e2d6;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.builder-modes label.is-picked {
+  border-color: #c2452f;
+  box-shadow: 0 0 0 1px #c2452f;
+}
+
+.builder-modes input {
+  flex: none;
+  margin: 3px 0 0;
+  accent-color: #c2452f;
+}
+
+.builder-modes label > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 14px;
+  color: #17202a;
+}
+
+.builder-modes em {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  color: #34502b;
+  background: #e8f0e2;
+  border-radius: 999px;
+}
+
+.builder-modes small {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #6b6559;
+}

@@ -1,0 +1,22 @@
+# The deck locker (see src/index.ts). Deploy: see README.md in this folder.
+name = "four-quarters-decks"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+[vars]
+# The site, plus the local dev and preview servers. Anything else is refused.
+ALLOWED_ORIGINS = "https://armanckeser.github.io,http://localhost:5174,http://localhost:4178"
+
+[[r2_buckets]]
+binding = "DECKS"
+bucket_name = "four-quarters-decks"
+
+# Ten uploads a minute per IP: plenty for a person, useless for a scraper
+# treating this as free storage.
+[[ratelimits]]
+name = "UPLOADS"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60

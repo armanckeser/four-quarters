@@ -236,7 +236,7 @@ try {
   console.log('\nshare link');
   {
     const base = 'https://example.com/four-quarters/';
-    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: 'sams-birthday.quarters.txt', cards: 6, locked: true };
+    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: 'sams-birthday.quarters.txt', cards: 6, locked: true, cloud: null };
     const url = inviteUrl(base + '#stale', sent);
     ok('link keeps the page path, drops old fragment', url.startsWith(base + '#open?'), url);
     ok('link carries no query string', !new URL(url).search);
@@ -255,6 +255,13 @@ try {
     ok('non-deck filename dropped', hostile.file === '');
     ok('implausible card count dropped', hostile.cards === 0);
     ok('only locked=1 means locked', hostile.locked === false);
+    const handle = { id: 'AbCdEfGhIjKlMnOpQrSt-_', key: 'k'.repeat(40) + '-_0' };
+    const cloudUrl = inviteUrl(base, { ...sent, file: '', cloud: handle });
+    const cloudBack = readInvite(new URL(cloudUrl).hash);
+    ok('cloud link round-trips its handle', JSON.stringify(cloudBack.cloud) === JSON.stringify(handle), cloudUrl);
+    ok('cloud link carries no file name', !/[?&]file=/.test(cloudUrl) && cloudBack.file === '');
+    ok('half a handle is no handle', readInvite('#open?d=' + handle.id).cloud === null && readInvite('#open?k=' + handle.key).cloud === null);
+    ok('malformed handle rejected', readInvite('#open?d=../../x&k=' + handle.key).cloud === null && readInvite('#open?d=' + handle.id + '&k=short').cloud === null);
     ok('garbage does not throw', readInvite('#open?%E0%A4%A') !== undefined);
   }
 
