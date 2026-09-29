@@ -23,7 +23,9 @@ about the codebase content, that is a false positive.
 - `npm run check:deck` — round-trips the `.quarters` format in plain Node, including
   malformed and hostile input. The one thing here with real tests.
 - `npm run check:flow` — drives the whole deck flow (pick photos → name + note → download → open
-  the share link on a clean machine and drop the file in) in headless Chrome. Needs `npm run preview -- --port 4178`
+  the share link on a clean machine and drop the file in) in headless Chrome. Build with
+  `VITE_QUARTERS_CLOUD=http://localhost:8787` and run `npm run dev` in `worker/` to also
+  cover sending and opening a cloud link. Needs `npm run preview -- --port 4178`
   running first; skips with a note if Chrome is not found.
 - `npm run check:perf` — loads the built app in Chrome under phone emulation and prints
   what the scene costs a phone (see "Performance" below). Same preview server as
@@ -123,15 +125,24 @@ harness wants the deterministic bundled set.)
   texture in the scene.
 - `Builder.tsx` — edits land on the machine immediately; there is no draft/publish split.
   Two steps listed up front (Cards → Send). `SendStep.tsx` is the second: deck name,
-  note, optional passphrase, then send. The file is written in the background (debounced,
-  generation-guarded) so the share sheet has it inside the click, and message + file go
-  together. With no share sheet (most desktops), or after a failed file share (remembered
-  in localStorage), it is Download + copy the message instead.
-- `invite.ts` — the link that travels next to the file: `#open?note=…&file=…&cards=…`.
-  Fragment, not query, so the host never sees the note; no pictures, nothing that opens
-  the deck. Parsed as untrusted input (clamped, control chars stripped).
+  note, optional passphrase, then HOW to send — two options, explained side by side:
+  **a link** (cloud.ts: one tap, stored encrypted 30 days, "Save a backup copy" below it)
+  or **the file** (nothing uploaded; two shares, message then file, because Android's
+  share sheet drops text sent with a file). The file is written in the background
+  (debounced, generation-guarded) so a share has it inside the click. With no share
+  sheet (most desktops) sharing falls back to copy/download; a refused share or copy
+  right after an upload turns the button into "Link ready — tap" rather than an error.
+- `invite.ts` — the link: `#open?note=…&file=…&cards=…` for a file, or `…&d=<id>&k=<key>`
+  for a cloud deck. Fragment, not query, so no server (GitHub Pages, GoatCounter, the
+  locker) ever sees the note or the key. Parsed as untrusted input.
+- `cloud.ts` + `worker/` — the deck locker. The browser seals the binary `.quarters` with
+  a random AES-GCM key (`iv ‖ ciphertext`), POSTs it to a Cloudflare Worker + R2, and puts
+  the key in the link; the Worker stores bytes it cannot read (Excalidraw's design).
+  Enabled by `VITE_QUARTERS_CLOUD` at build time (repo variable `QUARTERS_CLOUD_URL` in
+  pages.yml); unset hides "Send a link". Deploy steps: `worker/README.md`.
 - `Receive.tsx` — what that link opens: the sender's note and a drop zone naming the
-  exact file. App reads the invite on load and on `hashchange`, and clears it from the
+  exact file — or, for a cloud link, the deck loaded on arrival (asking first only if
+  it would replace a deck already on the device). App reads the invite on load and on `hashchange`, and clears it from the
   address bar once handled.
 
 Two hazards worth keeping in mind:

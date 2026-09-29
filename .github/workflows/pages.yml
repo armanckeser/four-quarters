@@ -50,7 +50,11 @@ jobs:
             echo "Project site — serving from /${{ github.event.repository.name }}/."
             echo "QUARTERS_BASE=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
           fi
+      # Where "Send a link" uploads sealed decks (worker/README.md). Unset, the
+      # site ships with file sending only.
       - run: npm run build
+        env:
+          VITE_QUARTERS_CLOUD: ${{ vars.QUARTERS_CLOUD_URL }}
       - run: npm run check:deck
 
       # The artifact is what gets served, so assert against it rather than

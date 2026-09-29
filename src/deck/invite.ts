@@ -10,8 +10,11 @@ import { MAX_CARDS } from './types';
  * on the machine with the sender's note and a place to drop the file, already
  * named, so the only thing left to work out is where their chat app saved it.
  *
- * It carries NO pictures and nothing that can open the deck — just the note, the
- * file's name, how many cards to expect and whether a passphrase is needed. It
+ * A FILE link carries no pictures and nothing that can open the deck — just the
+ * note, the file's name, how many cards to expect and whether a passphrase is
+ * needed. A CLOUD link (cloud.ts) adds `d`, the locker id of the sealed deck,
+ * and `k`, the only key that opens it — which is why the whole thing lives in
+ * the fragment. It
  * lives in the fragment (`#open?…`) rather than the query string because the
  * fragment never leaves the browser: the static host serving the page does not
  * see the note in its logs, which keeps "no server ever sees your stuff" true.
@@ -32,6 +35,8 @@ export type Invite = {
   cards: number;
   /** The file is locked; ask for the passphrase up front instead of after a failed open. */
   locked: boolean;
+  /** Set on a cloud link: where the sealed deck is and the key that opens it. */
+  cloud: { id: string; key: string } | null;
 };
 
 /** A note, not a letter: the letters go on the backs of the cards. Also keeps the URL pasteable. */
@@ -43,7 +48,12 @@ export function inviteUrl(base: string, invite: Invite): string {
   const params = new URLSearchParams();
   if (invite.note.trim()) params.set('note', invite.note.trim().slice(0, NOTE_MAX));
   if (invite.name.trim()) params.set('name', invite.name.trim().slice(0, NAME_MAX));
-  params.set('file', invite.file);
+  if (invite.cloud) {
+    params.set('d', invite.cloud.id);
+    params.set('k', invite.cloud.key);
+  } else {
+    params.set('file', invite.file);
+  }
   if (invite.cards > 0) params.set('cards', String(invite.cards));
   if (invite.locked) params.set('locked', '1');
   // URLSearchParams writes spaces as `+`, which reads fine and survives every
@@ -70,7 +80,17 @@ export function readInvite(hash: string): Invite | null {
     file: isDeckFileName(file) && file.length <= 80 ? file : '',
     cards: Number.isFinite(cards) && cards > 0 && cards <= MAX_CARDS ? cards : 0,
     locked: params.get('locked') === '1',
+    cloud: cloudOf(params.get('d'), params.get('k')),
   };
+}
+
+/** Both or neither: a link missing half its handle is treated as a file link. */
+function cloudOf(id: string | null, key: string | null): Invite['cloud'] {
+  // The locker's ids are 16 random bytes and the keys 32, both base64url.
+  if (!id || !key || !/^[A-Za-z0-9_-]{22}$/.test(id) || !/^[A-Za-z0-9_-]{43}$/.test(key)) {
+    return null;
+  }
+  return { id, key };
 }
 
 /** Strips control characters (keeping line breaks) and clamps. */
