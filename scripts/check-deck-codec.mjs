@@ -227,16 +227,20 @@ try {
   }
 
   console.log('\nfile naming');
-  ok('slugified', deckFileName("Sam's birthday!!") === 'sams-birthday.quarters.txt', deckFileName("Sam's birthday!!"));
-  ok('nameless falls back', deckFileName('   ') === 'four-quarters-deck.quarters.txt');
-  ok('emoji-only falls back', deckFileName('🎠🎠') === 'four-quarters-deck.quarters.txt');
-  ok('recognises every form', ['a.quarters.txt', 'a.quarters', 'a.halfmoon', 'a.quarters (1).txt', 'A.QUARTERS.TXT'].every(isDeckFileName));
-  ok('rejects others', !['a.txt', 'a.png', 'quarters', 'a.quarters.exe'].some(isDeckFileName));
+  ok('reads like a name', deckFileName("Sam's birthday") === "Sam's Birthday Deck", deckFileName("Sam's birthday"));
+  ok('no doubled deck', deckFileName('road trip deck') === 'Road Trip Deck', deckFileName('road trip deck'));
+  ok('keeps inner capitals', deckFileName('iPhone pics') === 'iPhone Pics Deck', deckFileName('iPhone pics'));
+  ok('drops what a file system refuses', deckFileName('a/b: c?*<>|"') === 'A B C Deck', deckFileName('a/b: c?*<>|"'));
+  ok('no leading or trailing dots', deckFileName('..hidden.') === 'Hidden Deck', deckFileName('..hidden.'));
+  ok('nameless falls back', deckFileName('   ') === 'Four Quarters Deck');
+  ok('emoji survive', deckFileName('🎠🎠') === '🎠🎠 Deck', deckFileName('🎠🎠'));
+  ok('recognises every form', ["Sam's Birthday Deck", 'Sam’s Birthday Deck (1)', 'Road Trip Deck.txt', 'a.quarters.txt', 'a.quarters', 'a.halfmoon', 'a.quarters (1).txt', 'A.QUARTERS.TXT'].every(isDeckFileName));
+  ok('rejects others', !['a.txt', 'a.png', 'quarters', 'a.quarters.exe', 'deck.png'].some(isDeckFileName));
 
   console.log('\nshare link');
   {
     const base = 'https://example.com/four-quarters/';
-    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: 'sams-birthday.quarters.txt', cards: 6, locked: true };
+    const sent = { note: 'Happy birthday!\nLove, S & A — 🎂 #1?', name: "Sam's birthday", file: "Sam's Birthday Deck", cards: 6, locked: true };
     const url = inviteUrl(base + '#stale', sent);
     ok('link keeps the page path, drops old fragment', url.startsWith(base + '#open?'), url);
     ok('link carries no query string', !new URL(url).search);

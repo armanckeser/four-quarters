@@ -735,3 +735,51 @@
     max-height: calc(100vh - 80px);
   }
 }
+
+/* ---- "What is this?" -------------------------------------------------------- */
+
+/* A native modal <dialog>: focus trap, Escape and the top layer for free, so it
+   sits above the builder panel and the scene alike. */
+.builder-about {
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 20px;
+  color: #17202a;
+  background: #fbfaf5;
+  border: 1px solid #ded9cb;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(23, 32, 42, 0.28);
+}
+
+.builder-about::backdrop {
+  background: rgba(23, 32, 42, 0.4);
+}
+
+.builder-about h3 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.builder .builder-about p,
+.builder-about li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #3c4148;
+}
+
+.builder .builder-about p {
+  margin: 0 0 10px;
+}
+
+.builder-about ol {
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+
+.builder-about li + li {
+  margin-top: 4px;
+}
+
+.builder .builder-about .builder-primary {
+  width: 100%;
+}

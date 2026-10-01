@@ -16,7 +16,7 @@
  * Skips with a note rather than failing if Chrome cannot be found, so it is
  * safe to leave in a chain of checks.
  */
-import { writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -74,7 +74,8 @@ for (let i = 0; i < 40 && !version; i += 1) {
 }
 if (!version) { console.log('check:flow — Chrome did not come up, skipping.'); process.exit(0); }
 
-const DECK_PATH = join(SCRATCH, 'exported.quarters.txt');
+// Saved under the name a person gets: no extension, the deck's own words.
+const DECK_PATH = join(SCRATCH, 'Test Deck');
 const BAD_PATH = join(SCRATCH, 'not-a-deck.quarters');
 
 const tab = await (await fetch('http://127.0.0.1:9222/json/new?about:blank', { method: 'PUT' })).json();
@@ -159,7 +160,9 @@ const addInput = await send('Runtime.evaluate', {
 });
 await send('DOM.setFileInputFiles', {
   objectId: addInput.result.objectId,
-  files: ['cake.svg', 'lighthouse.svg', 'teapot.svg'].map((f) => join(PRINTS, f)),
+  // Whatever three prints this checkout ships: photos here, drawn SVG
+  // placeholders in the public tree.
+  files: readdirSync(PRINTS).filter((f) => /\.(jpe?g|png|webp|svg)$/i.test(f)).sort().slice(0, 3).map((f) => join(PRINTS, f)),
 });
 // Wait for the rows themselves: the status line only appears once the first
 // resize starts, so "no status" is also true before anything has happened.
@@ -227,17 +230,21 @@ await evalJs(`
       Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, v);
       el.dispatchEvent(new Event('input', { bubbles: true }));
     };
-    set(document.querySelector('.builder-field input'), 'Test deck');
+    set(document.querySelector('.builder-field input'), 'Test Deck');
     set(document.querySelector('.builder-field textarea'), 'Happy birthday & more #1');
   })()
 `);
 await new Promise((r) => setTimeout(r, 300));
-ok('name persisted from the send step', (await readStored()).includes('Test deck'), await readStored());
+ok('name persisted from the send step', (await readStored()).includes('Test Deck'), await readStored());
 const sendCard = (await evalJs(`document.querySelector('.builder-send').textContent`)).value;
-ok('names the file it will send', sendCard.includes('test-deck.quarters.txt'), sendCard.slice(0, 120));
-// Headless desktop Chrome on Linux has no share sheet at all, so it must get
-// the download + copy path rather than a Share button that cannot work.
-ok('no share sheet: offers the download', /Download test-deck\.quarters\.txt/.test(sendCard) && !/^Share…/.test(sendCard));
+ok('names the file it will send', sendCard.includes('Test Deck'), sendCard.slice(0, 120));
+ok('no machinery in the name', !/quarters|\.txt/i.test(sendCard.split('What is this')[0]), sendCard.slice(0, 160));
+// One path everywhere: download, copy (share on a phone), attach. Headless
+// desktop Chrome on Linux has no share sheet, so it gets Copy.
+ok('offers the download first', /Download “Test Deck”/.test(sendCard), sendCard.slice(0, 120));
+ok('then copy the message', /Copy the message/.test(sendCard) && !/Share…/.test(sendCard));
+ok('then attach it', /attach “Test Deck” from your Downloads/.test(sendCard));
+ok('explains itself on request', (await evalJs(`!!document.querySelector('dialog.builder-about') && !document.querySelector('dialog.builder-about').open`)).value === true);
 await until('the file to be written', `!document.querySelector('.builder-send .builder-primary').disabled`, 10000);
 
 console.log('\nexport writes a real file');
@@ -263,10 +270,10 @@ const file = JSON.parse((await evalJs(`
     document.querySelector('.builder-send .builder-primary').click();
   })
 `)).value);
-// Plain text with a .txt name: the two things Chromium's share sheet checks.
-ok('named from the deck title', file.name === 'test-deck.quarters.txt', file.name);
-ok('shared as text/plain', file.type === 'text/plain', file.type);
-ok('explains itself', file.text.startsWith('Four Quarters deck: Test deck\n'), file.text.split('\n')[0]);
+// No extension, and a type that does not make the browser add one.
+ok('named from the deck title', file.name === 'Test Deck', file.name);
+ok('saved as octet-stream', file.type === 'application/octet-stream', file.type);
+ok('explains itself', file.text.startsWith('Four Quarters deck: Test Deck\n'), file.text.split('\n')[0]);
 ok('says where to open it', file.text.includes('go to http://localhost:4178/ and drop this file'));
 ok('carries the armored deck', file.text.includes('-----BEGIN FOUR QUARTERS DECK-----') && file.text.includes('-----END FOUR QUARTERS DECK-----'));
 ok('plausible size', file.size > 1000 && file.size < 200000, Math.round(file.size / 1024) + ' KB');
@@ -278,7 +285,7 @@ console.log('\nthe message carries the link');
 const preview = (await evalJs(`document.querySelector('.builder-preview').value`)).value;
 const link = (preview.match(/https?:\/\/\S+/) ?? [''])[0];
 ok('message starts with the note', preview.startsWith('Happy birthday & more #1'), preview.split('\n')[0]);
-ok('message names the attachment', preview.includes('test-deck.quarters.txt'));
+ok('message names the attachment', preview.includes('“Test Deck”'));
 ok('message carries an invite link', link.includes('#open?'), link);
 ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 
@@ -287,7 +294,7 @@ ok('link carries no pictures', link.length < 400, `${link.length} chars`);
 // seen this deck, and it comes back whole.
 console.log('\nopening that file on a clean machine');
 writeFileSync(DECK_PATH, Buffer.from(file.bytes.split(',').map(Number)));
-console.log(`  wrote exported.quarters.txt (${Math.round(file.size / 1024)} KB)`);
+console.log(`  wrote Test Deck (${Math.round(file.size / 1024)} KB)`);
 
 await wipe();
 await send('Page.navigate', { url: 'about:blank' });
@@ -299,8 +306,8 @@ const invited = JSON.parse((await evalJs(`JSON.stringify({
   drop: document.querySelector('.receive-drop') && document.querySelector('.receive-drop').textContent
 })`)).value);
 ok('link opens with the note', invited.note === 'Happy birthday & more #1', invited.note ?? 'none');
-ok('link opens with the deck name', invited.heading === 'Test deck', invited.heading);
-ok('drop zone names the file', (invited.drop ?? '').includes('test-deck.quarters.txt'), invited.drop ?? '');
+ok('link opens with the deck name', invited.heading === 'Test Deck', invited.heading);
+ok('drop zone names the file', (invited.drop ?? '').includes('“Test Deck”'), invited.drop ?? '');
 
 const receiveInput = await send('Runtime.evaluate', { expression: `document.querySelector('.receive input[type=file]')` });
 await send('DOM.setFileInputFiles', { objectId: receiveInput.result.objectId, files: [DECK_PATH] });
@@ -324,7 +331,7 @@ const loaded = JSON.parse((await evalJs(`JSON.stringify({
   thumbs: document.querySelectorAll('.builder-thumb img').length
 })`)).value);
 ok('three cards came back', loaded.rows === 3, `got ${loaded.rows}`);
-ok('deck name came back', (await readStored()).includes('Test deck'), await readStored());
+ok('deck name came back', (await readStored()).includes('Test Deck'), await readStored());
 ok('card title came back', loaded.firstTitle === 'A card title', loaded.firstTitle);
 ok('thumbnails rendered', loaded.thumbs === 3, String(loaded.thumbs));
 ok('no error shown', loaded.error === null, loaded.error ?? '');

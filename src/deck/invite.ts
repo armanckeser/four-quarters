@@ -26,7 +26,7 @@ export type Invite = {
   note: string;
   /** The deck's name, for the heading. May be empty. */
   name: string;
-  /** The file to look for, e.g. `sams-birthday.quarters`. Empty if the link had none/a bad one. */
+  /** The file to look for, e.g. `Sam's Birthday Deck`. Empty if the link had none/a bad one. */
   file: string;
   /** Cards in the deck, 0 when unknown. */
   cards: number;

@@ -110,7 +110,8 @@ harness wants the deterministic bundled set.)
   with the document, so a deck persisted as URLs comes back pointing at nothing.
 - `images.ts` — resize to 384px on the long edge, WebP q55 (~16 KB a card). The number
   exists so a six-card deck is ~100 KB: an attachment, not an upload.
-- `codec.ts` — the `.quarters` file. `QUARTERS` magic, version, flags, then a gzipped
+- `codec.ts` — the deck file, sent as `Sam's Birthday Deck` (`deckFileName`: the deck's
+  own name, no extension, saved as octet-stream so browsers don't append `.txt`). `QUARTERS` magic, version, flags, then a gzipped
   JSON manifest with base64 images. Everything past the header is untrusted input.
   What is SENT is `encodeDeckText`: that binary, base64'd between BEGIN/END armor lines
   under a plain-English header, as `name.quarters.txt` / `text/plain` — because
@@ -177,6 +178,9 @@ there is no `printImages.ts` any more.
 
 - `vite.config.ts` dedupes `three`, `react`, `react-dom`: duplicate copies of three
   ("Multiple instances of Three.js") silently break `instanceof` checks across packages.
+- Never import drei's `Text` directly; use `components/SceneText`. drei suspends on every
+  string it hasn't shown before, and without a local boundary that hides the WHOLE scene
+  (App's one Suspense) — the white flash on the first pull was exactly this.
 - StrictMode is on (`main.tsx`), so effects and state updaters double-invoke in dev. Play
   SFX OUTSIDE state updaters (see `flipOpenCard`/`closeOpenCard`) or they double-fire.
 

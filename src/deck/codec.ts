@@ -194,14 +194,15 @@ export async function encodeDeck(deck: Deck, passphrase?: string): Promise<Blob>
 
 /**
  * What actually gets sent: the binary file above, base64'd between two armor
- * lines, under a few lines of plain English, saved as `.quarters.txt`.
+ * lines, under a few lines of plain English, saved as `Sam's Birthday Deck` (see
+ * deckFileName).
  *
- * Only because of browsers. Chromium's Web Share refuses any file whose
- * extension and MIME type are not on a short allowlist (images, audio, video,
- * PDF, plain text…), so a `.quarters` file cannot go through the share sheet
- * on Android or desktop Chrome at all. Text is on the list and, unlike images,
- * chat apps pass it through untouched rather than recompressing it. The price
- * is base64's third, since the payload is already gzipped.
+ * Text first came in for Chromium's Web Share allowlist, which refused a bare
+ * `.quarters`. The share-the-file button is gone (SendStep.tsx says why), but the
+ * text stays: a person who opens an extensionless file by accident lands in a
+ * text viewer and is told what it is, and chat apps pass text through untouched
+ * rather than recompressing it. The price is base64's third, since the payload
+ * is already gzipped.
  *
  * The header is for a person who opens the file by accident: it says what the
  * file is and where to take it. The decoder ignores everything outside the
@@ -367,23 +368,39 @@ function cardsOf(manifest: Manifest): DeckCard[] {
 }
 
 /**
- * A deck file by name: `.quarters.txt` as sent now, bare `.quarters` from before
- * the text wrapper, `.halfmoon` from before the rename. Tolerates the ` (1)` a
- * download folder adds to a second copy. Only ever a hint — the contents decide.
+ * A deck file by name: `Sam's Birthday Deck` as sent now (plus whatever extension
+ * a browser or chat app tacked on), `.quarters.txt` / `.quarters` from before, and
+ * `.halfmoon` from before the rename. Tolerates the ` (1)` a download folder adds
+ * to a second copy. Only ever a hint — the contents decide.
  */
 export function isDeckFileName(name: string): boolean {
-  return /\.(quarters|halfmoon)( ?\(\d+\))?(\.txt)?$/i.test(name);
+  return (
+    /\.(quarters|halfmoon)( ?\(\d+\))?(\.txt)?$/i.test(name) ||
+    / deck( ?\(\d+\))?(\.(txt|bin|dat))?$/i.test(name)
+  );
 }
 
-/** `Sam's birthday` -> `sams-birthday.quarters.txt`, with a fallback for a nameless deck. */
+/**
+ * `Sam's birthday` -> `Sam's Birthday Deck`: what a person would call it, because a
+ * person is the one who has to find it in Downloads and attach it. No extension —
+ * `.quarters.txt` read as machinery, not as something a friend sent.
+ * Only the characters a file system refuses are dropped; apostrophes and accents
+ * stay, they are what makes it read like a name.
+ */
 export function deckFileName(name: string): string {
-  const slug = name
-    .toLowerCase()
-    // Apostrophes vanish rather than becoming separators: `sam-s-birthday` reads
-    // like a typo, `sams-birthday` reads like a filename someone chose.
-    .replace(/['’]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  return `${slug || 'four-quarters-deck'}.quarters.txt`;
+  const base = name
+    .replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    // A leading dot hides the file on macOS and Linux; a trailing one is eaten by Windows.
+    .replace(/^\.+|\.+$/g, '')
+    .trim()
+    .slice(0, 60)
+    .trim()
+    .split(' ')
+    // Title-case only words typed all in lower case, so `iPhone` and `McDonald` survive.
+    .map((word) => (word === word.toLowerCase() ? word.charAt(0).toUpperCase() + word.slice(1) : word))
+    .join(' ');
+  if (!base) return 'Four Quarters Deck';
+  return /\bdeck$/i.test(base) ? base : `${base} Deck`;
 }

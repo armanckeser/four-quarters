@@ -1,5 +1,6 @@
 import { ThreeEvent, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, ContactShadows, Text } from '@react-three/drei';
+import { OrbitControls, ContactShadows } from '@react-three/drei';
+import { Text } from './SceneText';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Group, Vector3 } from 'three';
 import { CelebrationPrint, SlotId, slotOrder } from '../data/celebration';

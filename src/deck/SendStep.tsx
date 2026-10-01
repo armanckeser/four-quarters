@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { inviteUrl, NOTE_MAX } from './invite';
 import type { Deck } from './types';
 
@@ -11,17 +11,13 @@ import type { Deck } from './types';
  * its own. It is written in the background while they type (Builder.tsx), so
  * by the time they reach for the button there is something to hand over.
  *
- * Two ways out, chosen by what the browser can actually do:
- *
- *   Share sheet with the file — message and attachment go to the same chat in
- *     one tap. The file is `.quarters.txt` / text/plain precisely so this works
- *     in Chromium too: its Web Share only takes allowlisted file types, the
- *     bare `.quarters` was refused on a Pixel, and `canShare()` did not warn.
- *
- *   Download + message — where there is no share sheet (most desktops), the
- *     file is downloaded and the message copied, with a line saying to attach
- *     the file. Also where a file share fails anyway: the step drops to this
- *     path on the spot and remembers it for next time.
+ * ONE path everywhere: download the file, copy (or, on a phone, share) the
+ * message, attach the file in that same chat. There used to be a share-the-file
+ * button on phones, but the share sheet routinely kept the attachment and dropped
+ * the text, so the person got a file with no link and no idea what it was for —
+ * the one thing the message exists to prevent. Three plain steps work in every
+ * chat app on every device, and the file is named like something a person sent
+ * ("Sam's Birthday Deck"), so finding it to attach is not a puzzle.
  */
 
 export function humanSize(bytes: number): string {
@@ -31,39 +27,6 @@ export function humanSize(bytes: number): string {
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
-const SHARE_BROKEN_KEY = 'quarters:txt-share-broken';
-
-function rememberedBroken(): boolean {
-  try {
-    return window.localStorage.getItem(SHARE_BROKEN_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function rememberBroken(): void {
-  try {
-    window.localStorage.setItem(SHARE_BROKEN_KEY, '1');
-  } catch {
-    // Private mode: it will just fail over again next time.
-  }
-}
-
-/**
- * Whether the share sheet will take the deck file. `canShare` is necessary but
- * not sufficient (it passed the old `.quarters` on a Pixel that then refused
- * it), so a real failure is remembered and trumps it.
- */
-function canShareFile(file: File | null): boolean {
-  if (!file || rememberedBroken()) return false;
-  if (typeof navigator.share !== 'function' || typeof navigator.canShare !== 'function') return false;
-  try {
-    return navigator.canShare({ files: [file] });
-  } catch {
-    return false;
-  }
-}
 
 /** Text-only sharing: every browser with a share sheet can do this, Chrome on Android included. */
 function canShareText(): boolean {
@@ -78,7 +41,7 @@ function messageFor(note: string, url: string, fileName: string, locked: boolean
   const lines = [];
   if (note.trim()) lines.push(note.trim(), '');
   lines.push(
-    `I made you a deck of prints for a little coin machine. Open this link, then drop in the file I'm sending with it (${fileName}):`,
+    `I made you a deck of prints for a little coin machine. Open this link, then drop in the file I'm sending with it, “${fileName}”:`,
     url,
   );
   if (locked) lines.push('', "It's locked — I'll tell you the passphrase separately.");
@@ -143,9 +106,7 @@ export function SendStep({
   const [copied, setCopied] = useState<'message' | 'link' | null>(null);
   const [copyFailed, setCopyFailed] = useState(false);
   const [shared, setShared] = useState(false);
-  // Flipped when a file share fails in front of us, so the fallback appears
-  // without waiting for a reload.
-  const [fileShareFailed, setFileShareFailed] = useState(false);
+  const aboutRef = useRef<HTMLDialogElement>(null);
 
   const locked = passphrase !== '';
   // The page's own address minus any fragment, so the link follows the app to
@@ -158,10 +119,9 @@ export function SendStep({
     locked,
   });
   const message = messageFor(note, url, fileName, locked);
-  // Decided from the browser, not from whether the file is ready yet: the
-  // layout must not jump from one path to the other while it is being written.
-  const withFile =
-    !fileShareFailed && canShareFile(file ?? new File([''], fileName, { type: 'text/plain' }));
+  // A phone gets "Share the message…" (straight into a chat, no paste), anything
+  // without a share sheet gets "Copy the message". Text only: see the top comment.
+  const shareText = canShareText();
 
   useEffect(() => {
     if (!copied) return;
@@ -173,18 +133,6 @@ export function SendStep({
     const ok = await copyText(what === 'message' ? message : url);
     setCopied(ok ? what : null);
     setCopyFailed(!ok);
-  };
-
-  const shareFile = async () => {
-    if (!file) return;
-    try {
-      await navigator.share({ files: [file], text: message, title: deck.name || 'Four Quarters' });
-      setShared(true);
-    } catch (failure) {
-      if (failure instanceof DOMException && failure.name === 'AbortError') return;
-      rememberBroken();
-      setFileShareFailed(true);
-    }
   };
 
   const shareMessage = async () => {
@@ -248,64 +196,40 @@ export function SendStep({
       </details>
 
       <div className="builder-send">
-        <p className="builder-lede">
-          They get <strong>a link</strong> that opens this machine with your note, and{' '}
-          <strong>{fileName}</strong>, the file with your pictures.
-        </p>
-
-        {withFile ? (
-          <>
-            <button className="builder-primary" onClick={shareFile} disabled={!file}>
-              {file ? 'Share…' : 'Getting the file ready…'}
+        <ol className="builder-howto">
+          <li>
+            <button className="builder-primary" onClick={onDownload} disabled={!file}>
+              {!file
+                ? 'Getting the file ready…'
+                : downloaded
+                  ? `✓ Downloaded “${fileName}”`
+                  : `Download “${fileName}”`}
             </button>
-            <p className="builder-hint">
-              Pick a chat or email: the message and the file go together.
-            </p>
-            {shared ? (
-              <p className="builder-done" role="status">
-                ✓ Sent. Tap Share again to send it to someone else.
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <ol className="builder-howto">
-            <li>
-              <button className="builder-primary" onClick={onDownload} disabled={!file}>
-                {downloaded ? `✓ Downloaded ${fileName}` : `Download ${fileName}`}
+          </li>
+          <li>
+            {shareText ? (
+              <button className="builder-primary" onClick={shareMessage}>
+                {shared ? '✓ Shared — share again?' : 'Share the message…'}
               </button>
-            </li>
-            <li>
-              {canShareText() ? (
-                <button className="builder-primary" onClick={shareMessage}>
-                  {shared ? '✓ Shared — share again?' : 'Share the message…'}
-                </button>
-              ) : (
-                <button className="builder-primary" onClick={() => copy('message')}>
-                  {copied === 'message' ? '✓ Copied' : 'Copy the message'}
-                </button>
-              )}
-            </li>
-            <li>
-              <span className="builder-howto-title">
-                In that chat, attach <strong>{fileName}</strong> from your Downloads.
-              </span>
-            </li>
-          </ol>
-        )}
-
-        {fileShareFailed ? (
-          <p className="builder-warn">
-            This browser couldn’t share the file, so download it and attach it yourself.
-          </p>
-        ) : null}
+            ) : (
+              <button className="builder-primary" onClick={() => copy('message')}>
+                {copied === 'message' ? '✓ Copied' : 'Copy the message'}
+              </button>
+            )}
+          </li>
+          <li>
+            <span className="builder-howto-title">
+              {shareText ? 'In that chat, attach' : 'Paste it in a chat or email and attach'} “
+              {fileName}” from your Downloads.
+            </span>
+          </li>
+        </ol>
 
         <div className="builder-row builder-quiet-row">
-          {withFile ? (
-            <button className="builder-link" onClick={onDownload} disabled={!file}>
-              {downloaded ? '✓ Downloaded' : 'Download the file'}
-            </button>
-          ) : null}
-          {withFile || canShareText() ? (
+          <button className="builder-link" onClick={() => aboutRef.current?.showModal()}>
+            What is this?
+          </button>
+          {shareText ? (
             <button className="builder-link" onClick={() => copy('message')}>
               {copied === 'message' ? '✓ Message copied' : 'Copy the message'}
             </button>
@@ -320,6 +244,42 @@ export function SendStep({
           </p>
         ) : null}
       </div>
+
+      <dialog
+        ref={aboutRef}
+        className="builder-about"
+        aria-labelledby="about-heading"
+        // A click on the backdrop lands on the dialog element itself, never on its
+        // content, so this closes on an outside click without a wrapper.
+        onClick={(event) => {
+          if (event.target === event.currentTarget) event.currentTarget.close();
+        }}
+      >
+        <h3 id="about-heading">Why a file and a message?</h3>
+        <p>
+          To make sure none of your photos are uploaded anywhere, there is no server: the
+          machine runs entirely in your browser, and the only way to get your deck to someone
+          else is for you to hand it over yourself.
+        </p>
+        <p>
+          So your photos and messages are packed into one file — locked with a passphrase if you
+          want — that you send to whoever you like, the way you would send any photo. No server
+          ever sees your photos or your messages.
+        </p>
+        <ol>
+          <li>
+            <strong>The file</strong> holds the deck: every picture, title and message.
+          </li>
+          <li>
+            <strong>The message</strong> has your note and a link that opens this machine, ready
+            for the file.
+          </li>
+          <li>They open the link, drop in the file, and put in four quarters.</li>
+        </ol>
+        <button className="builder-primary" onClick={() => aboutRef.current?.close()}>
+          Got it
+        </button>
+      </dialog>
 
       <details className="builder-explain">
         <summary>See the message</summary>
@@ -345,10 +305,6 @@ export function SendStep({
           </li>
           {deck.name.trim() ? <li>The deck’s name</li> : null}
         </ul>
-        <p>
-          Nothing is uploaded anywhere. The file only goes where you send it; the link carries
-          your note, never your pictures.
-        </p>
       </details>
 
       <div className="builder-step-foot">

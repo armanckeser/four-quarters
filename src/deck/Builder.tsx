@@ -191,8 +191,9 @@ export function Builder({ onClose }: { onClose: () => void }) {
         passphrase || undefined,
         window.location.origin + window.location.pathname,
       );
-      // text/plain, and a .txt name: Chromium's share sheet checks both.
-      const written = new File([blob], fileName, { type: 'text/plain' });
+      // octet-stream, not text/plain: the name has no extension on purpose, and
+      // Chrome and Firefox append the one a text/plain type implies (`.txt`).
+      const written = new File([blob], fileName, { type: 'application/octet-stream' });
       if (generation.current === started) setFile(written);
       return written;
     } catch {
@@ -364,7 +365,8 @@ export function Builder({ onClose }: { onClose: () => void }) {
       <input
         ref={openRef}
         type="file"
-        accept=".txt,text/plain,.quarters,.halfmoon"
+        // No `accept`: a deck file has no extension now, and iOS greys out anything
+        // that does not match. The contents are checked instead.
         hidden
         onChange={(event) => {
           const picked = event.target.files?.[0];

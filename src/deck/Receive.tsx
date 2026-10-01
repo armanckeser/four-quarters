@@ -10,7 +10,7 @@ import type { Invite } from './invite';
  * is for — so this reads top to bottom as the answer: who it's from (the note),
  * what to do (drop the file), and where that file probably is. The drop zone
  * names the exact file, because "a deck file" means nothing to them but
- * "sams-birthday.quarters.txt" is something they can find in a chat.
+ * "Sam's Birthday Deck" is something they can find in a chat.
  *
  * The machine is already running behind this; the panel is small so the thing
  * they are about to load is visible while they load it.
@@ -48,7 +48,7 @@ export function Receive({ invite, onClose }: { invite: Invite; onClose: () => vo
       // a wrong file with the wrong name is most likely the wrong attachment.
       setError(
         !isDeckFileName(file.name)
-          ? `${file.name} isn’t the deck. Look for the one ending in .quarters.txt.`
+          ? `${file.name} isn’t the deck. Look for the one ending in “Deck”.`
           : failure instanceof DeckFileError
             ? failure.message
             : 'That file could not be opened.',
@@ -76,7 +76,7 @@ export function Receive({ invite, onClose }: { invite: Invite; onClose: () => vo
     };
   });
 
-  const fileLabel = invite.file || 'the .quarters.txt file';
+  const fileLabel = invite.file ? `“${invite.file}”` : 'the deck file';
   const count = invite.cards ? `${invite.cards} ${invite.cards === 1 ? 'print' : 'prints'}` : 'prints';
 
   if (loaded !== null) {
