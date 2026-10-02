@@ -50,7 +50,13 @@ jobs:
             echo "Project site — serving from /${{ github.event.repository.name }}/."
             echo "QUARTERS_BASE=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
           fi
+      # The share preview needs the site's full address, and Pages knows it for
+      # both cases above (base_url carries the custom domain when there is one).
+      - id: pages
+        uses: actions/configure-pages@v5
       - run: npm run build
+        env:
+          QUARTERS_SITE_URL: ${{ steps.pages.outputs.base_url }}/
       - run: npm run check:deck
 
       # The artifact is what gets served, so assert against it rather than
@@ -66,7 +72,11 @@ jobs:
           fi
           echo "index.html references ${want} as expected."
           if [ -f dist/CNAME ]; then echo "CNAME shipped: $(cat dist/CNAME)"; fi
-      - uses: actions/configure-pages@v5
+      # A preview image that 404s shows up as a blank card, not a failed build.
+      - name: Check the share preview points at a file that shipped
+        run: |
+          grep -q "property=\"og:image\" content=\"${QUARTERS_SITE_URL}og.jpg\"" dist/index.html
+          test -f dist/og.jpg
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
