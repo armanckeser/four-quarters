@@ -10,7 +10,6 @@ import type { MachineState, OpenCard } from '../App';
 import { usePrintTextures } from '../lib/textures';
 import { quality } from '../lib/quality';
 import { CabinetBody } from './machine/CabinetBody';
-import { MakeYourOwnSign } from './machine/MakeYourOwnSign';
 import { Handle } from './machine/Handle';
 import { FoldedCardPart } from './machine/FoldedCardPart';
 import type { MessageScrollState } from './machine/FoldedCardPart';
@@ -52,8 +51,6 @@ type MachineSceneProps = {
   /** Step the face grid to the previous / next page (clamped + ignored while open). */
   onPrevPage: () => void;
   onNextPage: () => void;
-  /** The tent card on top of the cabinet was clicked: open the builder. */
-  onMakeYourOwn: () => void;
 };
 
 /** Look up a catalogue print by id (the drawer stores only the frozen id). The
@@ -498,7 +495,6 @@ export function MachineScene({
   onCardClosed,
   onPrevPage,
   onNextPage,
-  onMakeYourOwn,
 }: MachineSceneProps) {
   // Suspend OrbitControls wheel-zoom while the pointer is over the paging band, so the
   // wheel pages the grid instead of dollying the camera (R3F's onWheel stopPropagation
@@ -555,9 +551,6 @@ export function MachineScene({
 
       {/* The cabinet (body + frame + glass + pole + base). */}
       <CabinetBody />
-
-      {/* The "make your own" tent card on top of it: the way into the builder. */}
-      <MakeYourOwnSign onOpen={onMakeYourOwn} />
 
       {/* The illustrated face (grid + title + pager) on top of the white face. */}
       <MachineFace

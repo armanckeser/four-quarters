@@ -1,20 +1,161 @@
-/* The builder panel: paper over the scene, so the machine stays visible beside it. */
+/* ---- the sheet of paper ------------------------------------------------------ */
 
-.builder {
+/* The scene's two typefaces, for the page: the marker on the machine's sign and the
+   hand the card backs are written in. Same files troika already fetched. */
+@font-face {
+  font-family: 'Permanent Marker';
+  src: url('/fonts/PermanentMarker-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Patrick Hand';
+  src: url('/fonts/PatrickHand-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+
+/* One sheet (see PaperSheet.tsx). Its box is always the full panel; `clip-path` is
+   what is shown of it: a taped tag at the top right when closed, all of it when open.
+   The clip is the whole animation, so nothing lays out the page while it runs, and a
+   clipped region takes no pointer events, so the closed sheet does not cover the
+   canvas. The shadow is a filter on the wrapper because a box-shadow on the clipped
+   element would be clipped away with it. */
+.paper {
+  --paper: #f6f1e6;
+  --paper-slip: #fffdf8;
+  --paper-line: #d9d0bc;
+  --paper-ink: #2a2420;
+  /* Paper grain: fine noise, drawn once by the browser from an inline SVG. A variable
+     so the pinned footer can be the same paper as the sheet it sits on. */
+  --paper-fill:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .15 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
+    var(--paper);
+  --tag-top: 14px;
+  --tag-right: 14px;
+  --tag-width: 168px;
+  --tag-height: 46px;
+  /* Entering and leaving: a strong ease-out, the drawer curve. Opening is slower
+     than closing because it is the one being watched. */
+  --paper-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --paper-open: 380ms;
+  --paper-close: 260ms; /* PaperSheet.tsx CLOSE_MS */
+
   position: fixed;
   top: 0;
   right: 0;
   bottom: 0;
   width: min(420px, 100vw);
+  z-index: 10;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(60, 40, 20, 0.3)) drop-shadow(0 8px 18px rgba(60, 40, 20, 0.16));
+}
+
+.paper-sheet {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  color: var(--paper-ink);
+  background: var(--paper-fill);
+  clip-path: inset(
+    var(--tag-top) var(--tag-right) calc(100% - var(--tag-top) - var(--tag-height))
+      calc(100% - var(--tag-right) - var(--tag-width)) round 3px
+  );
+  transition: clip-path var(--paper-close) var(--paper-ease);
+}
+
+.paper[data-open='true'] .paper-sheet {
+  clip-path: inset(0 0 0 0 round 0px);
+  transition-duration: var(--paper-open);
+}
+
+/* The tag's lettering: the closed sheet's whole face, and the way in. */
+.builder-open {
+  position: absolute;
+  top: var(--tag-top);
+  right: var(--tag-right);
+  width: var(--tag-width);
+  height: var(--tag-height);
+  padding: 0;
+  font-family: 'Permanent Marker', 'Segoe Print', cursive;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+  color: var(--paper-ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    opacity 140ms ease,
+    transform 140ms var(--paper-ease);
+}
+
+.builder-open:active {
+  transform: scale(0.97);
+}
+
+.builder-open:focus-visible {
+  outline: 2px solid #c2452f;
+  outline-offset: -4px;
+}
+
+.paper[data-open='true'] .builder-open {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* A strip of masking tape holding the tag up. Outside the clip, so it can overhang
+   the tag's top edge; it lets go as the sheet unrolls. */
+.paper-tape {
+  position: absolute;
+  top: calc(var(--tag-top) - 9px);
+  right: calc(var(--tag-right) + var(--tag-width) / 2 - 29px);
+  z-index: 1;
+  width: 58px;
+  height: 19px;
+  background: rgba(222, 205, 160, 0.82);
+  transform: rotate(-3deg);
+  transition: opacity 140ms ease;
+}
+
+.paper[data-open='true'] .paper-tape {
+  opacity: 0;
+}
+
+/* What is written on the sheet. It comes up after the paper has mostly unrolled and
+   goes first when it rolls away, so text is never seen sliding under the clip. */
+.paper-body {
+  height: 100%;
+  overflow-y: auto;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.paper[data-open='true'] .paper-body {
+  opacity: 1;
+  transition: opacity 200ms ease 140ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No unrolling: the sheet is simply there or not, and only the fades remain. */
+  .paper-sheet,
+  .paper[data-open='true'] .paper-sheet {
+    transition: none;
+  }
+
+  .builder-open {
+    transition: opacity 140ms ease;
+  }
+
+  .builder-open:active {
+    transform: none;
+  }
+}
+
+.builder {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 100%;
   padding: 18px;
-  overflow-y: auto;
-  background: #fbfaf5;
-  border-left: 1px solid #ded9cb;
-  box-shadow: -18px 0 40px rgba(23, 32, 42, 0.14);
-  z-index: 10;
 }
 
 .builder-head {
@@ -23,16 +164,15 @@
   gap: 10px;
 }
 
-.builder-close {
+.builder .builder-close {
   flex: none;
   width: 32px;
   height: 32px;
+  padding: 0;
   font-size: 15px;
   color: #6b6559;
   background: transparent;
-  border: 1px solid #ded9cb;
-  border-radius: 8px;
-  cursor: pointer;
+  border-color: transparent;
 }
 
 .builder-note,
@@ -71,9 +211,9 @@
   font-size: 13px;
   padding: 7px 12px;
   color: #17202a;
-  background: #fff;
-  border: 1px solid #ded9cb;
-  border-radius: 8px;
+  background: var(--paper-slip);
+  border: 1px solid var(--paper-line);
+  border-radius: 4px;
   cursor: pointer;
 }
 
@@ -120,9 +260,12 @@
   display: flex;
   gap: 10px;
   padding: 10px;
-  background: #fff;
-  border: 1px solid #e7e2d6;
-  border-radius: 10px;
+  /* A slip of paper lying on the sheet, not a bordered box. */
+  background: var(--paper-slip);
+  border-radius: 3px;
+  box-shadow:
+    0 1px 2px rgba(60, 40, 20, 0.18),
+    0 0 0 1px rgba(60, 40, 20, 0.04);
 }
 
 .builder-thumb {
@@ -132,7 +275,10 @@
   height: 72px;
   overflow: hidden;
   background: #f1efe8;
-  border-radius: 6px;
+  /* A print: white border all round, like the ones the machine vends. */
+  border: 3px solid #fff;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.25);
 }
 
 .builder-thumb img {
@@ -168,13 +314,17 @@
 .builder-lock input,
 .builder-howto textarea {
   width: 100%;
-  padding: 6px 8px;
-  font: inherit;
-  font-size: 13px;
-  color: #17202a;
-  background: #fbfaf5;
-  border: 1px solid #e7e2d6;
-  border-radius: 6px;
+  padding: 4px 2px;
+  /* Written in the hand it will be printed in on the back of the card, on a ruled
+     line. 17px also keeps iOS from zooming the page when a field takes focus. */
+  font-family: 'Patrick Hand', 'Segoe Print', cursive;
+  font-size: 17px;
+  line-height: 1.3;
+  color: var(--paper-ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1.5px solid var(--paper-line);
+  border-radius: 0;
 }
 
 .builder-fields textarea {
@@ -186,8 +336,8 @@
 .builder-fields textarea:focus,
 .builder-lock input:focus,
 .builder-howto textarea:focus {
-  outline: 2px solid #c2452f;
-  outline-offset: -1px;
+  outline: none;
+  border-bottom-color: #c2452f;
 }
 
 .builder-card-actions {
@@ -217,7 +367,7 @@
   bottom: -18px;
   padding-bottom: 18px;
   margin-bottom: -18px;
-  background: #fbfaf5;
+  background: var(--paper-fill);
 }
 
 /* One button per step that moves you on. Same red as the machine's shell. */
@@ -271,8 +421,8 @@
 .builder .builder-steps button[aria-current='step'] {
   color: #17202a;
   font-weight: 600;
-  background: #fff;
-  border-color: #ded9cb;
+  background: var(--paper-slip);
+  border-color: var(--paper-line);
 }
 
 .builder-step-num {
@@ -308,8 +458,10 @@
 
 .builder-step h2 {
   margin: 4px 0 0;
-  font-size: 20px;
-  color: #17202a;
+  font-family: 'Permanent Marker', 'Segoe Print', cursive;
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--paper-ink);
 }
 
 .builder-lede,
@@ -343,9 +495,9 @@
   font: inherit;
   font-size: 12.5px;
   color: #3d4550;
-  background: #fbfaf5;
-  border: 1px solid #e7e2d6;
-  border-radius: 6px;
+  background: var(--paper-slip);
+  border: 1px solid var(--paper-line);
+  border-radius: 3px;
   resize: vertical;
 }
 
@@ -466,9 +618,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  background: #fff;
-  border: 1px solid #e7e2d6;
-  border-radius: 10px;
+  background: var(--paper-slip);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.18);
 }
 
 .builder-next {
@@ -491,20 +643,22 @@
 .builder-field input,
 .builder-field textarea {
   width: 100%;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 14px;
-  color: #17202a;
-  background: #fff;
-  border: 1px solid #ded9cb;
-  border-radius: 8px;
+  padding: 4px 2px;
+  font-family: 'Patrick Hand', 'Segoe Print', cursive;
+  font-size: 18px;
+  line-height: 1.3;
+  color: var(--paper-ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1.5px solid var(--paper-line);
+  border-radius: 0;
   resize: vertical;
 }
 
 .builder-field input:focus,
 .builder-field textarea:focus {
-  outline: 2px solid #c2452f;
-  outline-offset: -1px;
+  outline: none;
+  border-bottom-color: #c2452f;
 }
 
 .builder-field small,
@@ -519,9 +673,9 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  background: #fff;
-  border: 1px solid #e7e2d6;
-  border-radius: 12px;
+  background: var(--paper-slip);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(60, 40, 20, 0.18);
 }
 
 .builder-send .builder-primary {
@@ -699,39 +853,7 @@
 }
 
 
-/* The opener, when the panel is closed. */
-/* Off screen until a keyboard lands on it. Pointer and touch use the tent card in
-   the scene; this is the same action for keyboards and screen readers. */
-.builder-open {
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 9;
-  padding: 8px 13px;
-  font: inherit;
-  font-size: 13px;
-  color: #17202a;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #ded9cb;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.builder-open:not(:focus-visible) {
-  clip-path: inset(50%);
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  border: 0;
-}
-
 @media (max-width: 560px) {
-  .builder {
-    width: 100vw;
-    border-left: 0;
-  }
 
   /* A phone: a bottom sheet, so the machine above it stays in view. */
   .receive {

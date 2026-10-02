@@ -128,6 +128,11 @@ harness wants the deterministic bundled set.)
   generation-guarded) so the share sheet has it inside the click, and message + file go
   together. With no share sheet (most desktops), or after a failed file share (remembered
   in localStorage), it is Download + copy the message instead.
+- `PaperSheet.tsx` — the one piece of paper over the scene. Closed, it is clipped down
+  to a taped tag at the top right reading "Make your own"; pressed, the clip opens and
+  the same sheet unrolls into the builder. `clip-path` does the whole motion (it also
+  limits hit-testing, so the closed sheet never blocks the canvas). The builder stays
+  mounted until the sheet has rolled back up.
 - `invite.ts` — the link that travels next to the file: `#open?note=…&file=…&cards=…`.
   Fragment, not query, so the host never sees the note; no pictures, nothing that opens
   the deck. Parsed as untrusted input (clamped, control chars stripped).
@@ -164,11 +169,6 @@ there is no `printImages.ts` any more.
   open_fly → open_unfold → open_rest → closing`): it eases toward ONE phase target at a
   time and only advances when that motion converges, so transforms never blend
   simultaneously (a single blend made the old version tumble through the handle/glass).
-- `machine/MakeYourOwnSign.tsx` — the cream tent card on top of the cabinet; clicking it
-  opens the builder. It replaced a button floating over the canvas: nothing sits on top
-  of the scene except the small credit line. `App.tsx` still renders a real
-  `.builder-open` button for keyboards and screen readers (and `check:flow`), hidden
-  until it has keyboard focus.
 - `machine/BookstoreBackdrop.tsx`, `machine/LibraryEnvironment.tsx` — the set + HDRI.
 - `MachineScene.tsx` — assembles everything; `Drawer` wires per-slot state to `<Handle>`
   + `<FoldedCardPart>`; `MachineFace` draws the title + paginated thumbnail grid + pager;
