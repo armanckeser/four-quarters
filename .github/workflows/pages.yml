@@ -75,7 +75,7 @@ jobs:
       # A preview image that 404s shows up as a blank card, not a failed build.
       - name: Check the share preview points at a file that shipped
         run: |
-          grep -q "property=\"og:image\" content=\"${QUARTERS_SITE_URL}og.jpg\"" dist/index.html
+          grep -q 'property="og:image" content="${{ steps.pages.outputs.base_url }}/og.jpg"' dist/index.html
           test -f dist/og.jpg
       - uses: actions/upload-pages-artifact@v3
         with:
