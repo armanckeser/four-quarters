@@ -164,6 +164,11 @@ there is no `printImages.ts` any more.
   open_fly → open_unfold → open_rest → closing`): it eases toward ONE phase target at a
   time and only advances when that motion converges, so transforms never blend
   simultaneously (a single blend made the old version tumble through the handle/glass).
+- `machine/MakeYourOwnSign.tsx` — the cream tent card on top of the cabinet; clicking it
+  opens the builder. It replaced a button floating over the canvas: nothing sits on top
+  of the scene except the small credit line. `App.tsx` still renders a real
+  `.builder-open` button for keyboards and screen readers (and `check:flow`), hidden
+  until it has keyboard focus.
 - `machine/BookstoreBackdrop.tsx`, `machine/LibraryEnvironment.tsx` — the set + HDRI.
 - `MachineScene.tsx` — assembles everything; `Drawer` wires per-slot state to `<Handle>`
   + `<FoldedCardPart>`; `MachineFace` draws the title + paginated thumbnail grid + pager;

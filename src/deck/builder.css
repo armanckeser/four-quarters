@@ -700,6 +700,8 @@
 
 
 /* The opener, when the panel is closed. */
+/* Off screen until a keyboard lands on it. Pointer and touch use the tent card in
+   the scene; this is the same action for keyboards and screen readers. */
 .builder-open {
   position: fixed;
   top: 14px;
@@ -713,11 +715,16 @@
   border: 1px solid #ded9cb;
   border-radius: 999px;
   cursor: pointer;
-  backdrop-filter: blur(4px);
 }
 
-.builder-open:hover {
-  border-color: #b9b2a1;
+.builder-open:not(:focus-visible) {
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
 }
 
 @media (max-width: 560px) {

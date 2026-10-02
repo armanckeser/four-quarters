@@ -28,7 +28,7 @@ birthday card from J to Sam.
 </p>
 
 1. **Open [the machine](https://armanckeser.github.io/four-quarters/)** and click
-   **Make your own**.
+   the **Make your own** card standing on top of it.
 2. **Drop in photos** and write something on the back of each. The machine fills up as you go.
 3. **Save deck file** and send the `.quarters` file however you already send things:
    iMessage, WhatsApp, email, AirDrop. They open the site, drop the file in, and start

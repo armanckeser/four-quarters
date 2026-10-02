@@ -1,28 +1,28 @@
-/* The same frosted pill as "Make your own", a size down: the wall behind it is
-   pale and the shelves are busy, so bare text is unreadable in either colour. */
+/* Plain small type over the scene, no backing. The wall behind it is pale and the
+   shelves are dark, so the letters carry a soft dark halo, the way subtitles do,
+   and stay readable over either. */
 .credit {
   position: fixed;
-  left: calc(14px + env(safe-area-inset-left));
-  bottom: calc(12px + env(safe-area-inset-bottom));
+  left: calc(12px + env(safe-area-inset-left));
+  bottom: calc(8px + env(safe-area-inset-bottom));
   z-index: 9;
   margin: 0;
-  padding: 5px 11px;
-  font-size: 11.5px;
+  font-size: 11px;
   line-height: 1.4;
-  color: #5b6470;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid #ded9cb;
-  border-radius: 999px;
-  backdrop-filter: blur(4px);
+  color: rgba(255, 255, 255, 0.86);
+  text-shadow:
+    0 0 2px rgba(20, 12, 6, 0.75),
+    0 0 6px rgba(20, 12, 6, 0.55),
+    0 1px 1px rgba(20, 12, 6, 0.6);
 }
 
 .credit a {
-  color: #17202a;
+  color: #fff;
   text-decoration: underline;
-  text-decoration-color: #c9c3b3;
+  text-decoration-color: rgba(255, 255, 255, 0.45);
   text-underline-offset: 0.2em;
 }
 
 .credit a:hover {
-  text-decoration-color: #17202a;
+  text-decoration-color: #fff;
 }

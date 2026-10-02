@@ -662,6 +662,36 @@ export const card = {
 } as const;
 
 /** Horizontal card-emerge slit in the face above each handle. */
+/**
+ * The "make your own" tent card standing on top of the cabinet, right of the brass
+ * latch. It is how a visitor gets to the builder, and it lives IN the set (a shop
+ * sign in the cream of the machine's own face) so nothing floats over the scene. It
+ * is cream rather than kraft because kraft vanished against the tan books behind. The
+ * front panel leans back by `lean` and a second panel props it from behind, hinged
+ * at the top edge, so it still reads as a folded card when the camera orbits.
+ */
+export const sign = {
+  width: 0.168,
+  height: 0.058,
+  thickness: 0.0016,
+  color: '#f6f1e6',
+  /** How far each panel tips from vertical (rad). */
+  lean: 0.2,
+  /** Sits on the cabinet's top face, right of the latch, a little back from the rim. */
+  x: 0.082,
+  y: cabinet.height / 2,
+  z: cabinet.faceZ - 0.014,
+  /** A few degrees off square, so it looks set down by hand. */
+  yaw: -0.07,
+  inkColor: '#2a2420',
+  titleSize: 0.014,
+  noteSize: 0.0112,
+  /** The red "+" sticker at the left of the lettering. */
+  badgeRadius: 0.0115,
+  /** How much the card grows under the pointer. */
+  hoverScale: 1.06,
+} as const;
+
 export const cardSlit = {
   width: print.width + 0.016,
   height: 0.005,
