@@ -1,6 +1,8 @@
-/* Plain small type over the scene, no backing. The wall behind it is pale and the
-   shelves are dark, so the letters carry a soft dark halo, the way subtitles do,
-   and stay readable over either. */
+/* Plain small type over the scene, no backing and no underlines: it is there for
+   whoever goes looking, not to be read. Held back to about half strength until the
+   pointer is on it. The wall behind it is pale and the shelves are dark, so the
+   letters carry a soft dark halo, the way subtitles do, and stay readable over
+   either. */
 .credit {
   position: fixed;
   left: calc(12px + env(safe-area-inset-left));
@@ -9,20 +11,36 @@
   margin: 0;
   font-size: 11px;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.86);
+  color: #fff;
+  opacity: 0.55;
   text-shadow:
     0 0 2px rgba(20, 12, 6, 0.75),
     0 0 6px rgba(20, 12, 6, 0.55),
     0 1px 1px rgba(20, 12, 6, 0.6);
+  transition: opacity 150ms ease;
 }
 
 .credit a {
-  color: #fff;
-  text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.45);
-  text-underline-offset: 0.2em;
+  color: inherit;
+  text-decoration: none;
 }
 
-.credit a:hover {
-  text-decoration-color: #fff;
+.credit a:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 2px;
+}
+
+.credit:focus-within {
+  opacity: 1;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .credit:hover {
+    opacity: 1;
+  }
+
+  .credit a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
 }

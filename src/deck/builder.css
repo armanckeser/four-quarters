@@ -15,11 +15,12 @@
 }
 
 /* One sheet (see PaperSheet.tsx). Its box is always the full panel; `clip-path` is
-   what is shown of it: a taped tag at the top right when closed, all of it when open.
-   The clip is the whole animation, so nothing lays out the page while it runs, and a
-   clipped region takes no pointer events, so the closed sheet does not cover the
-   canvas. The shadow is a filter on the wrapper because a box-shadow on the clipped
-   element would be clipped away with it. */
+   what is shown of it: a tab sticking out of the right edge when closed, a sliver of
+   that tab when tucked away, all of it when open. The clip is the animation, so
+   nothing lays out the page while it runs, and a clipped region takes no pointer
+   events, so the closed sheet does not cover the canvas. The shadow is a filter on
+   the wrapper because a box-shadow on the clipped element would be clipped away with
+   it. */
 .paper {
   --paper: #f6f1e6;
   --paper-slip: #fffdf8;
@@ -30,15 +31,25 @@
   --paper-fill:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .25 0 0 0 0 .15 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
     var(--paper);
-  --tag-top: 14px;
-  --tag-right: 14px;
-  --tag-width: 168px;
-  --tag-height: 46px;
+  --tab-top: 14px;
+  --tab-width: 186px;
+  --tab-height: 44px;
+  /* What is left showing when the tab is tucked away: the arrow, and nothing else. */
+  --tab-peek: 30px;
   /* Entering and leaving: a strong ease-out, the drawer curve. Opening is slower
      than closing because it is the one being watched. */
   --paper-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --paper-open: 380ms;
-  --paper-close: 260ms; /* PaperSheet.tsx CLOSE_MS */
+  --paper-close: 240ms; /* PaperSheet.tsx CLOSE_MS */
+  /* The clip that shows the tab, and the one that shows its sliver. */
+  --clip-tab: inset(
+    var(--tab-top) 0 calc(100% - var(--tab-top) - var(--tab-height)) calc(100% - var(--tab-width))
+      round 5px 0 0 5px
+  );
+  --clip-peek: inset(
+    var(--tab-top) 0 calc(100% - var(--tab-top) - var(--tab-height)) calc(100% - var(--tab-peek))
+      round 5px 0 0 5px
+  );
 
   position: fixed;
   top: 0;
@@ -56,11 +67,12 @@
   pointer-events: auto;
   color: var(--paper-ink);
   background: var(--paper-fill);
-  clip-path: inset(
-    var(--tag-top) var(--tag-right) calc(100% - var(--tag-top) - var(--tag-height))
-      calc(100% - var(--tag-right) - var(--tag-width)) round 3px
-  );
+  clip-path: var(--clip-tab);
   transition: clip-path var(--paper-close) var(--paper-ease);
+}
+
+.paper[data-tucked='true'] .paper-sheet {
+  clip-path: var(--clip-peek);
 }
 
 .paper[data-open='true'] .paper-sheet {
@@ -68,56 +80,99 @@
   transition-duration: var(--paper-open);
 }
 
-/* The tag's lettering: the closed sheet's whole face, and the way in. */
-.builder-open {
+/* The tab's face: the arrow that tucks it away, then the lettering that opens the
+   builder. It slides with the clip (same distance, same curve), so tucking reads as
+   the paper being pushed off the edge of the screen, not as a wipe across it. */
+.paper-tab {
   position: absolute;
-  top: var(--tag-top);
-  right: var(--tag-right);
-  width: var(--tag-width);
-  height: var(--tag-height);
+  top: var(--tab-top);
+  right: 0;
+  display: flex;
+  width: var(--tab-width);
+  height: var(--tab-height);
+  transition:
+    transform var(--paper-close) var(--paper-ease),
+    opacity 140ms ease;
+}
+
+.paper[data-tucked='true'] .paper-tab {
+  transform: translateX(calc(var(--tab-width) - var(--tab-peek)));
+}
+
+.paper[data-open='true'] .paper-tab {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.paper-tab button {
   padding: 0;
-  font-family: 'Permanent Marker', 'Segoe Print', cursive;
-  font-size: 18px;
-  letter-spacing: 0.01em;
   color: var(--paper-ink);
   background: transparent;
   border: 0;
   cursor: pointer;
-  transition:
-    opacity 140ms ease,
-    transform 140ms var(--paper-ease);
+}
+
+.paper-tab button:focus-visible {
+  outline: 2px solid #c2452f;
+  outline-offset: -4px;
+}
+
+/* As wide as the sliver, so the tucked tab IS this button: pressing what is left of
+   the paper brings it back. The arrow points the way the paper will go. */
+.paper-tuck {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--tab-peek);
+  color: #8a7f6c;
+  border-right: 1px dashed var(--paper-line);
+}
+
+.paper-tuck svg {
+  transition: transform var(--paper-close) var(--paper-ease);
+}
+
+.paper[data-tucked='true'] .paper-tuck svg {
+  transform: rotate(180deg);
+}
+
+.builder-open {
+  flex: 1;
+  font-family: 'Permanent Marker', 'Segoe Print', cursive;
+  font-size: 17px;
+  letter-spacing: 0.01em;
+  transition: transform 140ms var(--paper-ease);
 }
 
 .builder-open:active {
   transform: scale(0.97);
 }
 
-.builder-open:focus-visible {
-  outline: 2px solid #c2452f;
-  outline-offset: -4px;
+@media (hover: hover) and (pointer: fine) {
+  /* With a mouse, a tucked tab comes out under the pointer and goes back when it
+     leaves. Touch has no hover, so there the sliver is pressed instead. */
+  .paper[data-tucked='true'][data-open='false'] .paper-sheet:hover {
+    clip-path: var(--clip-tab);
+  }
+
+  .paper[data-tucked='true'][data-open='false'] .paper-sheet:hover .paper-tab {
+    transform: none;
+  }
+
+  .paper-tuck:hover {
+    color: var(--paper-ink);
+  }
 }
 
-.paper[data-open='true'] .builder-open {
-  opacity: 0;
-  pointer-events: none;
+/* Keyboard focus brings it out too, or Tab would land on lettering that is off the
+   screen. `:focus-visible`, not `:focus-within`: pressing the arrow leaves focus on
+   it, and that must not hold the tab out after it was just told to go. */
+.paper[data-tucked='true'][data-open='false'] .paper-sheet:has(:focus-visible) {
+  clip-path: var(--clip-tab);
 }
 
-/* A strip of masking tape holding the tag up. Outside the clip, so it can overhang
-   the tag's top edge; it lets go as the sheet unrolls. */
-.paper-tape {
-  position: absolute;
-  top: calc(var(--tag-top) - 9px);
-  right: calc(var(--tag-right) + var(--tag-width) / 2 - 29px);
-  z-index: 1;
-  width: 58px;
-  height: 19px;
-  background: rgba(222, 205, 160, 0.82);
-  transform: rotate(-3deg);
-  transition: opacity 140ms ease;
-}
-
-.paper[data-open='true'] .paper-tape {
-  opacity: 0;
+.paper[data-tucked='true'][data-open='false'] .paper-sheet:has(:focus-visible) .paper-tab {
+  transform: none;
 }
 
 /* What is written on the sheet. It comes up after the paper has mostly unrolled and
@@ -135,14 +190,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* No unrolling: the sheet is simply there or not, and only the fades remain. */
+  /* No rolling or sliding: the paper is simply there or not, and only the fades
+     remain. */
   .paper-sheet,
-  .paper[data-open='true'] .paper-sheet {
+  .paper[data-open='true'] .paper-sheet,
+  .paper-tuck svg {
     transition: none;
   }
 
-  .builder-open {
+  .paper-tab {
     transition: opacity 140ms ease;
+  }
+
+  .builder-open {
+    transition: none;
   }
 
   .builder-open:active {

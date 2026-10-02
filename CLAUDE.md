@@ -129,10 +129,12 @@ harness wants the deterministic bundled set.)
   together. With no share sheet (most desktops), or after a failed file share (remembered
   in localStorage), it is Download + copy the message instead.
 - `PaperSheet.tsx` — the one piece of paper over the scene. Closed, it is clipped down
-  to a taped tag at the top right reading "Make your own"; pressed, the clip opens and
-  the same sheet unrolls into the builder. `clip-path` does the whole motion (it also
-  limits hit-testing, so the closed sheet never blocks the canvas). The builder stays
-  mounted until the sheet has rolled back up.
+  to a tab sticking out of the right edge: an arrow, then "Make your own". Pressing the
+  lettering unrolls the same sheet into the builder. The arrow tucks the tab off the
+  edge until only the arrow's sliver shows (remembered in localStorage); pressing the
+  sliver, or hovering it with a mouse, brings it back. `clip-path` plus one transform
+  do the motion (the clip also limits hit-testing, so the closed sheet never blocks
+  the canvas). The builder stays mounted until the sheet has rolled back up.
 - `invite.ts` — the link that travels next to the file: `#open?note=…&file=…&cards=…`.
   Fragment, not query, so the host never sees the note; no pictures, nothing that opens
   the deck. Parsed as untrusted input (clamped, control chars stripped).
