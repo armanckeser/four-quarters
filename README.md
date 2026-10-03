@@ -19,6 +19,8 @@ a going-away present, a long-distance "thinking of you", or the group chat's yea
 anything you'd make a card for, except this one they get to play with. The sample deck is a
 birthday card from J to Sam.
 
+If Four Quarters is useful to you, starring the repo helps other people find it, and [armanckeser.com/subscribe](https://armanckeser.com/subscribe) has ways to hear about new releases.
+
 ---
 
 ## Send one in a minute
