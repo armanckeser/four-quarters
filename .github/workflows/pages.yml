@@ -35,25 +35,18 @@ jobs:
       # The CC0 reflection map is gitignored (1.6 MB); without it the chrome renders flat.
       - run: bash scripts/get-hdri.sh
 
-      # Where the site sits decides how every asset URL is written, and the two
-      # cases differ: a plain project site lives at /<repo>/, but a CUSTOM DOMAIN
-      # serves the same repo from the domain root. Getting this wrong does not
-      # fail the build — it ships a page whose script, sounds, fonts and HDRI all
-      # 404, so the machine comes up blank. public/CNAME is the thing that
-      # decides it, so read the base off that rather than hardcoding either one.
-      - name: Work out the base path
-        run: |
-          if [ -f public/CNAME ]; then
-            echo "Custom domain $(cat public/CNAME) — serving from the root."
-            echo "QUARTERS_BASE=/" >> "$GITHUB_ENV"
-          else
-            echo "Project site — serving from /${{ github.event.repository.name }}/."
-            echo "QUARTERS_BASE=/${{ github.event.repository.name }}/" >> "$GITHUB_ENV"
-          fi
-      # The share preview needs the site's full address, and Pages knows it for
-      # both cases above (base_url carries the custom domain when there is one).
+      # Where the site sits decides how every asset URL is written: a project site
+      # lives at /<repo>/, a custom domain serves the same repo from the root.
+      # Getting this wrong does not fail the build, it ships a page whose script,
+      # sounds, fonts and HDRI all 404, so the machine comes up blank. Pages knows
+      # which case applies (base_path is "/<repo>" or empty), so read it from there.
+      # base_url carries the custom domain too, for the share preview.
       - id: pages
         uses: actions/configure-pages@v5
+      - name: Work out the base path
+        run: |
+          echo "Serving from '${{ steps.pages.outputs.base_path }}/'."
+          echo "QUARTERS_BASE=${{ steps.pages.outputs.base_path }}/" >> "$GITHUB_ENV"
       - run: npm run build
         env:
           QUARTERS_SITE_URL: ${{ steps.pages.outputs.base_url }}/

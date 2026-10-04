@@ -12,7 +12,7 @@ feeding it quarters until they've collected them all.
   <img src="img/hero.gif" alt="Four quarters go in, the handle is pulled, a birthday card flies out and flips over to a note signed Love, J" width="420" />
 </p>
 
-<p align="center"><b><a href="https://armanckeser.github.io/four-quarters/">Try the sample deck →</a></b></p>
+<p align="center"><b><a href="https://four-quarters.armanckeser.com/">Try the sample deck →</a></b></p>
 
 Birthdays, anniversaries, Valentine's Day, graduations, weddings, Mother's and Father's Day,
 a going-away present, a long-distance "thinking of you", or the group chat's year in photos:
@@ -29,7 +29,7 @@ If Four Quarters is useful to you, starring the repo helps other people find it,
   <img src="img/send.gif" alt="Naming a deck Sam's 30th, adding three pictures with titles and notes, then saving the deck file" width="720" />
 </p>
 
-1. **Open [the machine](https://armanckeser.github.io/four-quarters/)** and click
+1. **Open [the machine](https://four-quarters.armanckeser.com/)** and click
    **Make your own**.
 2. **Drop in photos** and write something on the back of each. The machine fills up as you go.
 3. **Save deck file** and send the `.quarters` file however you already send things:
