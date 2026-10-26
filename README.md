@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="img/banner.png" alt="Four Quarters: turn your photos into a tiny vending machine and send it for any occasion" width="100%" />
-</p>
-
 **Turn your photos into a tiny vending machine, and send it to someone for a special occasion.**
 
 They drop four quarters, pull the handle, and a card flies out: one of your photos on
@@ -43,7 +39,10 @@ to about 100 KB, so it goes as an attachment. Add a passphrase to lock the file 
 
 ---
 
-## Development
+<details>
+<summary>Develop it</summary>
+
+### Development
 
 ### Prerequisites
 
@@ -93,7 +92,7 @@ Parts are registered in `src/harness/parts.tsx`.
 
 ---
 
-## Architecture
+### Architecture
 
 ```
 four-quarters/
@@ -119,7 +118,7 @@ four-quarters/
 
 ---
 
-## Tech Stack
+### Tech Stack
 
 | Layer         | Technology                                             |
 |---------------|--------------------------------------------------------|
@@ -127,6 +126,8 @@ four-quarters/
 | 3D            | three.js                                               |
 | Audio         | Web Audio API                                          |
 | Framework     | React 19, TypeScript, Vite                             |
+
+</details>
 
 ---
 
